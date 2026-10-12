@@ -1,0 +1,212 @@
+:root {
+  --bg: var(--vscode-editor-background);
+  --fg: var(--vscode-editor-foreground);
+  --muted: var(--vscode-descriptionForeground);
+  --border: var(--vscode-panel-border, #8884);
+  --card: var(--vscode-editorWidget-background, var(--bg));
+  --accent: var(--vscode-button-background);
+  --accent-fg: var(--vscode-button-foreground);
+  --running: var(--vscode-charts-blue, #3794ff);
+  --done: var(--vscode-charts-green, #89d185);
+  --error: var(--vscode-errorForeground, #f48771);
+  --cancelled: var(--vscode-charts-yellow, #cca700);
+  --pending: var(--vscode-disabledForeground, #888);
+  --waiting: var(--vscode-charts-orange, #d18616);
+}
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
+.app { display: flex; flex-direction: column; height: 100%; }
+.toolbar { display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.toolbar-row { display: flex; gap: 8px; }
+.auth-chip { align-self: flex-start; font-size: .85em; color: var(--muted); cursor: help; }
+.composer-box textarea:focus-visible { outline: none; }
+button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+button { background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 4px; padding: 6px 16px; cursor: pointer; font: inherit; }
+button:disabled { opacity: .5; cursor: default; }
+button.danger { background: var(--vscode-errorForeground, #c33); color: #fff; }
+button.link { background: none; color: inherit; padding: 0 4px; font-size: 1.2em; }
+.banners { display: flex; flex-direction: column; gap: 4px; padding: 8px 16px 0; }
+.banner { display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px; border-radius: 4px; border-left: 3px solid var(--muted); background: var(--card); }
+.banner.error { border-left-color: var(--error); }
+.banner.warn { border-left-color: var(--cancelled); }
+.banner.info { border-left-color: var(--running); }
+.canvas { flex: 1; min-height: 0; }
+.react-flow__node { cursor: pointer; }
+.agent-node { min-width: 160px; padding: 8px 12px; border-radius: 6px; background: var(--card); border: 2px solid var(--pending); color: var(--fg); }
+.agent-name { font-weight: 600; margin-bottom: 4px; }
+.agent-meta { display: flex; justify-content: space-between; gap: 12px; font-size: .9em; color: var(--muted); }
+.agent-events { font-size: .85em; color: var(--muted); margin-top: 2px; }
+.status-running { border-color: var(--running); }
+.status-done { border-color: var(--done); }
+.status-error { border-color: var(--error); }
+.status-cancelled { border-color: var(--cancelled); }
+.status-running .status-badge { color: var(--running); }
+.status-done .status-badge { color: var(--done); }
+.status-error .status-badge { color: var(--error); }
+.status-cancelled .status-badge { color: var(--cancelled); }
+@media (prefers-reduced-motion: reduce) { .react-flow__edge.animated path { animation: none !important; } }
+@media (max-width: 480px) { .toolbar-row { flex-direction: column; } }
+
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: grid; place-items: center; padding: 16px; z-index: 10; }
+.modal { width: min(860px, 100%); max-height: 100%; display: flex; flex-direction: column; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 32px rgba(0, 0, 0, .5); }
+.modal-head { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.modal-head h2 { margin: 0; font-size: 1.1em; flex: 1; }
+.modal-body { overflow: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.log-item { padding: 8px 10px; border-radius: 6px; background: var(--card); border-left: 3px solid var(--pending); }
+.log-user { border-left-color: var(--cancelled); }
+.log-assistant { border-left-color: var(--running); }
+.log-result { border-left-color: var(--done); }
+.log-error { border-left-color: var(--error); }
+.log-role { font-size: .8em; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 2px; }
+.log-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-note, .log-empty { color: var(--muted); font-size: .9em; }
+.log-tool { border-left-color: var(--pending); }
+.tool-running { border-left-color: var(--running); }
+.tool-done { border-left-color: var(--done); }
+.tool-error { border-left-color: var(--error); }
+.tool-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.tool-summary { color: var(--muted); font-family: var(--vscode-editor-font-family, monospace); overflow-wrap: anywhere; }
+.tool-state { margin-left: auto; font-size: .85em; color: var(--muted); }
+.log-tool details { margin-top: 6px; }
+.log-tool summary { cursor: pointer; color: var(--muted); font-size: .9em; }
+.log-tool pre { margin: 4px 0 0; max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--vscode-editor-font-family, monospace); font-size: .9em; }
+
+/* ---- aguardando resposta, pergunta, composer, novo node, markdown ---- */
+.status-waiting { border-color: var(--waiting); }
+.status-waiting .status-badge { color: var(--waiting); }
+.agent-node.status-waiting { box-shadow: 0 0 0 0 var(--waiting); animation: pulse 1.8s ease-out infinite; }
+.spinner { display: inline-block; width: .85em; height: .85em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -.1em; animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--waiting) 60%, transparent); } 70%, 100% { box-shadow: 0 0 0 10px transparent; } }
+@media (prefers-reduced-motion: reduce) { .spinner, .agent-node.status-waiting { animation: none; } }
+.waiting-row { align-items: center; justify-content: space-between; }
+.waiting-hint { flex: 1; color: var(--waiting); }
+button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+button.small { padding: 2px 10px; font-size: .9em; }
+.toolbar-meta { display: flex; align-items: center; gap: 12px; }
+.toolbar-meta .auth-chip { align-self: auto; }
+.question-card { border: 1px solid var(--waiting); border-left-width: 4px; border-radius: 6px; padding: 10px 12px; background: var(--card); }
+.question-title { font-weight: 600; color: var(--waiting); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+.question-text { font-size: 1.05em; }
+.question-options { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+.question-options button.option { background: transparent; color: var(--fg); border: 1px solid var(--waiting); }
+.question-options button.option:hover:not(:disabled) { background: var(--waiting); color: #000; }
+.question-hint { color: var(--muted); font-size: .85em; margin-top: 6px; }
+.new-node { width: min(680px, 100%); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.md p { margin: 0 0 .5em; }
+.md p:last-child { margin-bottom: 0; }
+.md ul, .md ol { margin: 0 0 .5em; padding-left: 1.4em; }
+.md code { font-family: var(--vscode-editor-font-family, monospace); background: var(--vscode-textCodeBlock-background, #8882); padding: 0 .3em; border-radius: 3px; }
+.md pre { margin: 0 0 .5em; padding: 8px; overflow: auto; border-radius: 4px; background: var(--vscode-textCodeBlock-background, #8882); }
+.md pre code { background: none; padding: 0; }
+.md blockquote { margin: 0 0 .5em; padding-left: 10px; border-left: 3px solid var(--border); color: var(--muted); }
+.md .md-h { font-weight: 600; margin: .4em 0 .3em; }
+.question-text p { margin: 0; }
+
+/* ---- vários chats: menu de contexto, ✕ do node, diálogos, subtítulo ---- */
+.agent-name { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.agent-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+.context-menu { position: fixed; z-index: 20; min-width: 180px; padding: 4px; background: var(--vscode-menu-background, var(--card)); color: var(--vscode-menu-foreground, var(--fg)); border: 1px solid var(--vscode-menu-border, var(--border)); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, .45); display: flex; flex-direction: column; }
+.menu-item { background: transparent; color: inherit; text-align: left; border-radius: 4px; padding: 6px 12px; }
+.menu-item:hover, .menu-item:focus-visible { background: var(--vscode-menu-selectionBackground, var(--accent)); color: var(--vscode-menu-selectionForeground, var(--accent-fg)); outline: none; }
+.modal-sub { color: var(--muted); font-size: .85em; }
+.new-chat { width: min(680px, 100%); }
+
+.starting { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .9em; }
+.warn-note { color: var(--waiting); }
+[inert] { opacity: .6; }
+
+/* ---- botão de envio (avião de papel), cartão de chat, canvas vazio ---- */
+.send-btn { display: inline-flex; align-items: center; justify-content: center; align-self: flex-end; width: 36px; height: 36px; padding: 0; border-radius: 8px; background: #7c3aed; color: #fff; }
+.send-btn:hover:not(:disabled) { background: #6d28d9; }
+.send-btn:disabled { background: #7c3aed; opacity: .4; }
+.empty-hint { position: absolute; inset: 0; display: grid; place-items: center; padding: 0 24px; text-align: center; color: var(--muted); pointer-events: none; z-index: 5; }
+.canvas { position: relative; }
+.chat-card { width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: var(--bg); color: var(--fg); border: 2px solid var(--pending); border-radius: 10px; box-shadow: 0 4px 16px rgba(0, 0, 0, .35); overflow: hidden; }
+.chat-card.status-waiting { animation: pulse 1.8s ease-out infinite; }
+.chat-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); cursor: grab; background: var(--card); }
+.chat-title { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
+.chat-title-input { flex: 1; min-width: 0; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-focusBorder, var(--border)); border-radius: 4px; padding: 2px 6px; font: inherit; }
+.chat-state { font-size: .8em; color: var(--muted); white-space: nowrap; }
+.chat-glyph { width: 1em; text-align: center; }
+.chat-actions { display: flex; gap: 4px; }
+.chat-log { flex: 1; min-height: 60px; overflow: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; cursor: auto; user-select: text; }
+.chat-running { color: var(--running); font-size: .9em; display: flex; align-items: center; gap: 6px; }
+.chat-card .question-card { margin-top: 4px; }
+.react-flow__node-chat { cursor: default; }
+.react-flow__node-agent { cursor: grab; }
+
+/* ---- campo de mensagem (anexos, menu "/"), opções do chat, alças e foco do cartão ---- */
+.composer.msg-input { padding: 8px 10px; border-top: 1px solid var(--border); flex: none; }
+.toolbar-row.msg-input { padding: 0; border: 0; }
+.attach-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; max-width: 220px; padding: 1px 8px; border-radius: 999px; background: var(--vscode-badge-background, #4d4d4d); color: var(--vscode-badge-foreground, #fff); font-size: .85em; }
+.chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-x { background: transparent; color: inherit; border: 0; padding: 0 2px; line-height: 1; font-size: 1.1em; cursor: pointer; }
+.slash-menu { position: absolute; left: 0; right: 0; bottom: 100%; margin-bottom: 4px; max-height: 220px; overflow: auto; z-index: 15; background: var(--vscode-quickInput-background, var(--card)); color: var(--vscode-quickInput-foreground, var(--fg)); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, .45); padding: 4px; }
+.slash-item { display: flex; justify-content: space-between; gap: 12px; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
+.slash-item.active { background: var(--vscode-list-activeSelectionBackground, var(--accent)); color: var(--vscode-list-activeSelectionForeground, var(--accent-fg)); }
+.slash-name { font-family: var(--vscode-editor-font-family, monospace); overflow: hidden; text-overflow: ellipsis; }
+.slash-group { color: var(--muted); font-size: .8em; white-space: nowrap; }
+.slash-item.active .slash-group { color: inherit; opacity: .8; }
+.chat-options { font-size: .75em; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
+
+
+/* borda do cartão: cor do estado plena quando em foco; esmaecida quando não */
+.chat-card { --c: #7c3aed; /* o roxo do botão de enviar */ border-color: color-mix(in srgb, var(--c) 40%, transparent); transition: border-color .15s, box-shadow .15s; }
+.chat-card.status-error { --c: var(--error); }
+.chat-card.status-waiting { --c: var(--waiting); border-color: var(--c); }
+.chat-card.is-selected, .chat-card:focus-within, .chat-card:hover { border-color: var(--c); }
+.chat-card.is-selected { box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 35%, transparent), 0 4px 16px rgba(0, 0, 0, .35); }
+
+/* dentro do cartão o menu "/" precisa caber (o cartão corta o que passa da borda; altura mínima 240px) */
+.chat-card .slash-menu { max-height: 120px; }
+
+/* ---- campo no padrão do Claude Code: caixa única, texto em cima, rodapé de controles ---- */
+textarea { resize: none; }
+.msg-input { position: relative; display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.composer-box { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px 6px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, var(--border)); border-radius: 12px; }
+.composer-box:focus-within { border-color: var(--vscode-focusBorder, var(--accent)); }
+.composer-box textarea { width: 100%; box-sizing: border-box; min-height: 1.5em; padding: 2px 0; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; overflow-y: hidden; }
+.composer-footer { display: flex; align-items: flex-end; gap: 6px; }
+.footer-left { display: flex; align-items: center; gap: 2px; }
+.footer-mid { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); }
+.icon-btn:hover:not(:disabled) { background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, .08)); color: var(--fg); }
+.composer-footer .send-btn { align-self: auto; width: 32px; height: 32px; margin-left: auto; }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 999px; background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, .08)); color: var(--fg); font-size: .9em; }
+.pill-label { color: var(--muted); }
+.pill select { max-width: 170px; padding: 0; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.pill select option { background: var(--vscode-dropdown-background, var(--bg)); color: var(--vscode-dropdown-foreground, var(--fg)); }
+.pill-input { width: 150px; border: 0; outline: 0; font: inherit; }
+.composer.msg-input { padding: 8px 10px; border-top: 1px solid var(--border); flex: none; }
+.toolbar-row.msg-input { padding: 0; border: 0; }
+.toolbar-meta { flex-wrap: wrap; }
+.new-chat .modal-body, .new-node .modal-body { gap: 8px; overflow: visible; }
+
+/* alças de redimensionar do cartão: escondidas; só aparecem com o mouse no canto (as bordas continuam arrastáveis) */
+.chat-resize-handle.react-flow__resize-control.handle { width: 22px; height: 22px; border: 0; border-radius: 6px; background: transparent; opacity: 0; transition: opacity .12s; }
+.chat-resize-handle.react-flow__resize-control.handle:hover { opacity: 1; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.chat-resize-line.react-flow__resize-control.line { opacity: 0; }
+
+/* cabeçalho do cartão: o título cede espaço, os botões não quebram linha e descem para uma segunda linha se faltar largura */
+.chat-head { flex-wrap: wrap; row-gap: 4px; }
+.chat-title { flex: 1 1 120px; }
+.chat-state { white-space: nowrap; }
+.chat-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.chat-actions button { white-space: nowrap; }
+.pill-input { background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, .08)); color: var(--fg); }
+.new-chat .pill select, .new-node .pill select { max-width: 280px; }
+.footer-left { padding-bottom: 1px; }
+
+/* foco por teclado nos controles do campo */
+.pill:focus-within { outline: 1px solid var(--vscode-focusBorder, var(--accent)); outline-offset: 1px; }
+.icon-btn:focus-visible { outline: 1px solid var(--vscode-focusBorder, var(--accent)); outline-offset: 1px; }
+.pill select { padding-right: 6px; }
+
+/* cartão: pílulas compactas (só o valor; o rótulo vai na dica) e etiqueta da CLI */
+.chat-card .pill-label { display: none; }
+.chat-card .pill { padding: 0 8px; }
+.chat-card .pill select { max-width: 110px; }
+.chat-cli { font-size: .75em; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; white-space: nowrap; }

@@ -1,0 +1,16 @@
+src/**
+tests/**
+webview/**
+scripts/**
+docs/**
+fixtures/**
+node_modules/**
+.superpowers/**
+**/*.map
+.vscode/**
+hooks/**
+esbuild.mjs
+tsconfig.json
+vitest.config.ts
+package-lock.json
+spec-*.md

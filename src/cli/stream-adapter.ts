@@ -1,0 +1,177 @@
+import { detectQuestion } from '../core/question';
+import type { RunAdapter } from './run-adapter';
+import { type FinalStatus, type NormalizedEvent, rootNodeId, subagentNodeId } from '../core/schema';
+
+// Nomes de tool que abrem um subagente (a versão 2.1.267 do claude usa "Agent").
+const SUBAGENT_TOOLS = new Set(['Task', 'Agent']);
+
+type Json = Record<string, any>;
+
+/** Estado de turnos anteriores da mesma sessão, para o adapter reconhecer subagentes já existentes. */
+export interface ResumeSeed {
+  /** ids das chamadas (tool_use_id) dos subagentes que já existem no grafo */
+  subagents: string[];
+  /** task_id (id do agente no Claude Code) -> tool_use_id da chamada original */
+  tasks: Record<string, string>;
+}
+
+export interface StreamAdapterOptions {
+  resume?: ResumeSeed;
+}
+
+function taskStatus(s: unknown): FinalStatus {
+  if (s === 'failed' || s === 'error') return 'error';
+  if (s === 'killed' || s === 'stopped' || s === 'cancelled') return 'cancelled';
+  return 'done';
+}
+
+export class StreamAdapter implements RunAdapter {
+  malformedLines = 0;
+  private started = false;
+  private finished = false;
+  private readonly subagents = new Set<string>();
+  private readonly tasks = new Map<string, string>(); // task_id -> tool_use_id
+  private readonly root: string;
+  private readonly resuming: boolean;
+
+  constructor(private readonly runId: string, opts: StreamAdapterOptions = {}) {
+    this.root = rootNodeId(runId);
+    this.resuming = !!opts.resume;
+    for (const id of opts.resume?.subagents ?? []) this.subagents.add(id);
+    for (const [task, id] of Object.entries(opts.resume?.tasks ?? {})) this.tasks.set(task, id);
+  }
+
+  push(line: string): NormalizedEvent[] {
+    if (!line.trim()) return [];
+    let msg: unknown;
+    try {
+      msg = JSON.parse(line);
+    } catch {
+      this.malformedLines += 1;
+      return [];
+    }
+    if (!msg || typeof msg !== 'object') return [];
+    const m = msg as Json;
+    const ts = Date.now();
+    const out: NormalizedEvent[] = [];
+
+    if (m.type === 'system' && m.subtype === 'init') {
+      if (this.started && this.finished) {
+        // Segundo turno no mesmo processo (ex.: notificação de tarefa em segundo plano): reabre o run.
+        this.finished = false;
+        out.push({ type: 'run_resumed', runId: this.runId, ...(typeof m.session_id === 'string' ? { sessionId: m.session_id } : {}), ts });
+      }
+      out.push(...this.start(m.session_id, ts));
+    } else if (m.type === 'system' && (m.subtype === 'task_started' || m.subtype === 'task_notification')) {
+      out.push(...this.start(m.session_id, ts));
+      out.push(...this.task(m, ts));
+    } else if (m.type === 'assistant' || m.type === 'user') {
+      out.push(...this.start(m.session_id, ts));
+      out.push(...this.content(m, ts));
+    } else if (m.type === 'result') {
+      out.push(...this.start(m.session_id, ts));
+      if (!this.finished) {
+        this.finished = true;
+        const question = m.is_error ? null : detectQuestion(typeof m.result === 'string' ? m.result : '');
+        out.push({
+          type: 'run_finished', runId: this.runId, status: m.is_error ? 'error' : 'done',
+          ...(question ? { question } : {}), ts,
+        });
+      }
+    }
+    return out;
+  }
+
+  end(cancelled: boolean): NormalizedEvent[] {
+    if (this.finished) return [];
+    this.finished = true;
+    const ts = Date.now();
+    return [
+      ...this.start(undefined, ts),
+      { type: 'run_finished', runId: this.runId, status: cancelled ? 'cancelled' : 'error', ts },
+    ];
+  }
+
+  private start(sessionId: unknown, ts: number): NormalizedEvent[] {
+    if (this.started) return [];
+    this.started = true;
+    if (this.resuming) {
+      return [{ type: 'run_resumed', runId: this.runId, ...(typeof sessionId === 'string' ? { sessionId } : {}), ts }];
+    }
+    return [{
+      type: 'run_started', runId: this.runId,
+      sessionId: typeof sessionId === 'string' ? sessionId : undefined, ts,
+    }];
+  }
+
+  /** task_started/task_notification: liga o id do agente ao node e acompanha continuações (SendMessage). */
+  private task(m: Json, ts: number): NormalizedEvent[] {
+    const taskId = typeof m.task_id === 'string' ? m.task_id : undefined;
+    if (!taskId) return [];
+    if (m.subtype === 'task_started') {
+      const toolUseId = typeof m.tool_use_id === 'string' ? m.tool_use_id : undefined;
+      if (toolUseId && this.subagents.has(toolUseId) && !this.tasks.has(taskId)) {
+        this.tasks.set(taskId, toolUseId);
+        return [{ type: 'node_meta', runId: this.runId, nodeId: subagentNodeId(this.runId, toolUseId), agentId: taskId, ts }];
+      }
+      const original = this.tasks.get(taskId);
+      if (original) return [{ type: 'node_resumed', runId: this.runId, nodeId: subagentNodeId(this.runId, original), ts }];
+      return [];
+    }
+    const original = this.tasks.get(taskId);
+    if (!original) return [];
+    return [{ type: 'node_finished', runId: this.runId, nodeId: subagentNodeId(this.runId, original), status: taskStatus(m.status), ts }];
+  }
+
+  private owner(m: Json): string {
+    const p = m.parent_tool_use_id;
+    return typeof p === 'string' && this.subagents.has(p) ? subagentNodeId(this.runId, p) : this.root;
+  }
+
+  private content(m: Json, ts: number): NormalizedEvent[] {
+    const blocks = m.message?.content;
+    if (!Array.isArray(blocks)) return [];
+    const out: NormalizedEvent[] = [];
+    const owner = this.owner(m);
+
+    for (const b of blocks as Json[]) {
+      if (!b || typeof b !== 'object') continue;
+      if (b.type === 'text' && typeof b.text === 'string') {
+        out.push({
+          type: 'node_event', runId: this.runId, nodeId: owner, kind: 'message',
+          payload: { role: m.type === 'user' ? 'user' : 'assistant', text: b.text }, ts,
+        });
+      } else if (b.type === 'tool_use' && typeof b.id === 'string') {
+        out.push({
+          type: 'node_event', runId: this.runId, nodeId: owner, kind: 'tool_call',
+          payload: { id: b.id, name: b.name, input: b.input }, ts,
+        });
+        if (SUBAGENT_TOOLS.has(b.name)) {
+          this.subagents.add(b.id);
+          out.push({
+            type: 'node_started', runId: this.runId, nodeId: subagentNodeId(this.runId, b.id),
+            parentId: owner, agentType: String(b.input?.subagent_type ?? 'general-purpose'),
+            invocationId: b.id, ts,
+          });
+        }
+      } else if (b.type === 'tool_result' && typeof b.tool_use_id === 'string') {
+        if (this.subagents.has(b.tool_use_id)) {
+          const child = subagentNodeId(this.runId, b.tool_use_id);
+          out.push({ type: 'node_event', runId: this.runId, nodeId: child, kind: 'tool_result', payload: b.content, ts });
+          // Também no log de quem fez a chamada, para a tool "Agent" poder ser pareada com o resultado.
+          out.push({
+            type: 'node_event', runId: this.runId, nodeId: owner, kind: 'tool_result',
+            payload: { tool_use_id: b.tool_use_id, content: b.content, is_error: !!b.is_error }, ts,
+          });
+          out.push({ type: 'node_finished', runId: this.runId, nodeId: child, status: b.is_error ? 'error' : 'done', ts });
+        } else {
+          out.push({
+            type: 'node_event', runId: this.runId, nodeId: owner, kind: 'tool_result',
+            payload: { tool_use_id: b.tool_use_id, content: b.content, is_error: !!b.is_error }, ts,
+          });
+        }
+      }
+    }
+    return out;
+  }
+}

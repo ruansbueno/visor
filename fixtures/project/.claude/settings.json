@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"process.env.VISOR_MARK&&require('fs').appendFileSync(process.env.VISOR_MARK,'project-hook\\n')\""
+          }
+        ]
+      }
+    ]
+  }
+}

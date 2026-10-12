@@ -1,0 +1,161 @@
+{
+  "name": "visor",
+  "publisher": "ruansbueno",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "pretest": "npm run build --silent"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@types/vscode": "~1.90.0",
+    "@xyflow/react": "^12.12.0",
+    "esbuild": "^0.28.2",
+    "jsdom": "^29.1.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  },
+  "displayName": "Visor — Canvas de Agentes",
+  "description": "Mostra a execução de agentes do Claude Code como um grafo de nodes.",
+  "main": "./dist/extension.cjs",
+  "categories": [
+    "AI",
+    "Visualization",
+    "Other"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "visor.openCanvas",
+        "title": "Visor: Abrir canvas de agentes"
+      },
+      {
+        "command": "visor.cancelRun",
+        "title": "Visor: Cancelar todas as execuções"
+      }
+    ],
+    "configuration": {
+      "title": "Visor",
+      "properties": {
+        "visor.claudePath": {
+          "type": "string",
+          "default": "claude",
+          "description": "Caminho do executável do Claude Code. No Windows, use o claude.exe do instalador nativo.",
+          "scope": "machine"
+        },
+        "visor.permissionMode": {
+          "type": "string",
+          "default": "acceptEdits",
+          "enum": [
+            "acceptEdits",
+            "auto",
+            "bypassPermissions",
+            "manual",
+            "dontAsk",
+            "plan"
+          ],
+          "markdownDescription": "Modo de permissões do `claude -p` (modo painel é headless, sem aprovação interativa). `bypassPermissions` exige confirmação a cada execução."
+        },
+        "visor.allowedTools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Regras de tools permitidas, ex.: Bash(npm test:*)."
+        },
+        "visor.disallowedTools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Regras de tools bloqueadas."
+        },
+        "visor.parallelWarningThreshold": {
+          "type": "integer",
+          "default": 4,
+          "minimum": 0,
+          "markdownDescription": "Avisa quando houver este número (ou mais) de conversas executando ao mesmo tempo, pelo gasto da assinatura e pelo risco de editarem os mesmos arquivos. `0` desliga o aviso. Não há limite máximo."
+        },
+        "visor.codexPath": {
+          "type": "string",
+          "default": "codex",
+          "scope": "machine",
+          "description": "Caminho do executável do Codex CLI (detectado e listado no diálogo de novo chat; o suporte a conversar por ele ainda não existe)."
+        },
+        "visor.codexSandbox": {
+          "type": "string",
+          "default": "workspace-write",
+          "enum": [
+            "read-only",
+            "workspace-write",
+            "danger-full-access"
+          ],
+          "markdownDescription": "Sandbox padrão dos chats do **Codex** (equivalente às permissões do Claude Code). `danger-full-access` exige confirmação a cada execução."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "visor",
+          "title": "Visor",
+          "icon": "media/visor.svg"
+        }
+      ]
+    },
+    "views": {
+      "visor": [
+        {
+          "id": "visor.sidebar",
+          "name": "Agentes",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "A extensão executa o Claude Code (e os hooks/skills do projeto) na pasta aberta; só faz sentido em pastas em que você confia."
+    }
+  },
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ruansbueno/visor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ruansbueno/visor/issues"
+  },
+  "homepage": "https://github.com/ruansbueno/visor#readme",
+  "keywords": [
+    "claude",
+    "claude code",
+    "codex",
+    "agents",
+    "canvas",
+    "ai"
+  ],
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  }
+}

@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"00000000-0000-4000-8000-000000000122"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I’ll create the requested file with the exact content."}}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc \"printf 'hi' > hello.txt && wc -c < hello.txt\"","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc \"printf 'hi' > hello.txt && wc -c < hello.txt\"","aggregated_output":"       2\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"done"}}
+{"type":"turn.completed","usage":{"input_tokens":25716,"cached_input_tokens":12032,"cache_write_input_tokens":0,"output_tokens":87,"reasoning_output_tokens":0}}
