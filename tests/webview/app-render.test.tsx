@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { it, expect, beforeAll } from 'vitest';
+import { it, expect, beforeAll, vi } from 'vitest';
 import { createRoot } from 'react-dom/client';
 import { act } from 'react';
 import type { HostMessage, RunView } from '../../src/protocol';
@@ -647,6 +647,27 @@ it('clipe da barra de baixo: pede o seletor, mostra etiquetas removíveis e envi
   await key('Enter', {}, ta);
   expect(posted).toContainEqual({ type: 'start', prompt: 'analise', attachments: ['/proj/a.ts'] });
   expect(document.querySelectorAll('.toolbar .chip')).toHaveLength(0);
+  await unmount(root);
+});
+
+it('colar um print (Cmd+V) no campo envia a imagem ao host; colar texto segue normal', async () => {
+  const root = await mount();
+  const ta = document.querySelector('.toolbar textarea')!;
+  const paste = (items: unknown[]) => {
+    const ev = new Event('paste', { bubbles: true, cancelable: true }) as any;
+    ev.clipboardData = { items };
+    ta.dispatchEvent(ev);
+    return ev as Event;
+  };
+  const text = paste([{ kind: 'string', type: 'text/plain', getAsFile: () => null }]);
+  expect(text.defaultPrevented).toBe(false);
+  const png = new File([new Uint8Array([137, 80, 78, 71])], 'print.png', { type: 'image/png' });
+  const ev = paste([{ kind: 'file', type: 'image/png', getAsFile: () => png }]);
+  expect(ev.defaultPrevented).toBe(true);
+  await vi.waitFor(() => expect(posted).toContainEqual(expect.objectContaining({ type: 'pasteImage', mime: 'image/png', data: 'iVBORw==' })));
+  const id = (posted.find((m) => m.type === 'pasteImage') as any).requestId as string;
+  await send({ type: 'files', requestId: id, files: [{ path: '/tmp/visor-paste/p.png', name: 'p.png', isDir: false }] });
+  expect([...document.querySelectorAll('.toolbar .chip')].map((c) => c.textContent)).toEqual(['p.png×']);
   await unmount(root);
 });
 

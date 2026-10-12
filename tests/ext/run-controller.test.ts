@@ -41,6 +41,7 @@ function setup(over: Partial<ControllerDeps> = {}, settings: Partial<VisorSettin
     listClis: async () => [{ id: 'claude', label: 'Claude Code', version: '2.1.287', supported: true }],
     capabilities: async () => ({ commands: [{ name: 'ping', kind: 'command', group: 'comando' }], defaultModel: 'claude-x' }),
     pickFiles: async () => [],
+    savePastedImage: async (mime, bytes) => `/tmp/visor-paste/${bytes.length}.${mime.split('/')[1]}`,
     checkAttachments: async (paths) => paths.map((p) => ({ path: p, name: p.split('/').filter(Boolean).pop() ?? p, isDir: p.endsWith('/dir') })),
     homedir: () => '/home/u',
     prefs: { authBannerDismissed: () => prefState.dismissed, dismissAuthBanner: () => { prefState.dismissed = true; } },
@@ -881,9 +882,9 @@ describe('RunController: opções do chat, anexos, CLIs e capacidades', () => {
     for (const f of ['/proj/src/a.ts', '/outro/lugar/b.png', '/proj/dir']) expect(prompt).toContain(`- ${f}`);
     expect(args).not.toContain('--add-dir'); // nunca libera a pasta inteira (nem para edição)
     expect(rulesOf(args)).toEqual(['Read(//outro/lugar/b.png)']); // só o arquivo de fora; os de dentro do projeto já são legíveis
-    const warn = t.notices().find((n) => n.level === 'warn');
-    expect(warn?.text).toContain('b.png');
-    expect(warn?.text).toMatch(/somente leitura/i);
+    const info = t.notices().find((n) => n.level === 'info');
+    expect(info?.text).toContain('b.png');
+    expect(info?.text).toMatch(/somente leitura/i);
     await t.tick(15);
     const first = t.posted.filter((m) => m.type === 'chat_log').at(-1) as any;
     expect(first.events[0].payload).toEqual({ role: 'user', text: 'analise', attachments: ['a.ts', 'b.png', 'dir'] });
@@ -987,6 +988,26 @@ describe('RunController: opções do chat, anexos, CLIs e capacidades', () => {
     const boom = setup({ pickFiles: async () => { throw new Error('x'); } });
     await boom.c.handle({ type: 'pickFiles', requestId: 'r3' });
     expect(boom.posted.find((m) => m.type === 'files')).toEqual({ type: 'files', requestId: 'r3', files: [] });
+  });
+
+  it('pasteImage grava a imagem, devolve como anexo e a deixa enviar sem aviso de "fora do projeto"', async () => {
+    const t = setup();
+    await t.c.handle({ type: 'pasteImage', requestId: 'p1', mime: 'image/png', data: Buffer.from('hello').toString('base64') });
+    expect(t.posted.find((m) => m.type === 'files')).toEqual({
+      type: 'files', requestId: 'p1', files: [{ path: '/tmp/visor-paste/5.png', name: '5.png', isDir: false }],
+    });
+    const p = (await start(t, { prompt: 'olha', attachments: ['/tmp/visor-paste/5.png'] })).done;
+    expect(t.notices().filter((n) => n.text.includes('Fora do projeto'))).toEqual([]);
+    expect(rulesOf(t.runs[0]!.opts.args)).toEqual(['Read(//tmp/visor-paste/5.png)']);
+    t.runs[0]!.finish();
+    await p;
+  });
+
+  it('pasteImage com falha ao gravar devolve lista vazia e avisa', async () => {
+    const t = setup({ savePastedImage: async () => { throw new Error('x'); } });
+    await t.c.handle({ type: 'pasteImage', requestId: 'p2', mime: 'image/png', data: 'aGk=' });
+    expect(t.posted.find((m) => m.type === 'files')).toEqual({ type: 'files', requestId: 'p2', files: [] });
+    expect(t.notices().at(-1)?.level).toBe('error');
   });
 
   it('listClis envia as CLIs instaladas; falha devolve lista vazia', async () => {

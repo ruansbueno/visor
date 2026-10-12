@@ -108,6 +108,8 @@ export type WebviewMessage =
   | { type: 'cancelPending' }
   | { type: 'setOptions'; runId: string; options: ChatOptions }
   | { type: 'pickFiles'; requestId: string }
+  /** imagem colada no campo (Cmd/Ctrl+V): o host grava num arquivo temporário e devolve como anexo */
+  | { type: 'pasteImage'; requestId: string; mime: string; data: string }
   | { type: 'listClis' }
   | { type: 'listCapabilities' }
   | { type: 'listAgents' }
@@ -153,6 +155,9 @@ function validNodeId(v: unknown): v is string {
 
 // Em bytes UTF-8 (o prompt vira um único argumento de processo; Linux limita cada argumento a 128 KiB).
 export const MAX_PROMPT_BYTES = 100_000;
+/** Imagem colada: até ~10 MB (em base64) e só formatos que os CLIs leem. */
+export const MAX_PASTE_BASE64 = 14_000_000;
+export const PASTE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
 
 export function parseWebviewMessage(raw: unknown): WebviewMessage | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -203,6 +208,12 @@ export function parseWebviewMessage(raw: unknown): WebviewMessage | null {
     }
     case 'pickFiles':
       return typeof m.requestId === 'string' && m.requestId.length > 0 && m.requestId.length <= 100 ? { type: 'pickFiles', requestId: m.requestId } : null;
+    case 'pasteImage': {
+      const ok = typeof m.requestId === 'string' && m.requestId.length > 0 && m.requestId.length <= 100
+        && typeof m.mime === 'string' && (PASTE_MIMES as readonly string[]).includes(m.mime)
+        && typeof m.data === 'string' && m.data.length > 0 && m.data.length <= MAX_PASTE_BASE64 && /^[A-Za-z0-9+/]+={0,2}$/.test(m.data);
+      return ok ? { type: 'pasteImage', requestId: m.requestId as string, mime: m.mime as string, data: m.data as string } : null;
+    }
     case 'listClis':
       return { type: 'listClis' };
     case 'listCapabilities':

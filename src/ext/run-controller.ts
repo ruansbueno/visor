@@ -29,6 +29,8 @@ export interface ControllerDeps {
   capabilities(cwd: string): Promise<Capabilities>;
   /** abre o seletor de arquivos do VS Code; devolve os caminhos escolhidos ([] se cancelar) */
   pickFiles(): Promise<string[]>;
+  /** grava uma imagem colada num arquivo temporário e devolve o caminho */
+  savePastedImage(mime: string, bytes: Buffer): Promise<string>;
   /** confere quais caminhos existem e se são pastas */
   checkAttachments(paths: string[]): Promise<AttachedFile[]>;
   /** configuração inicial dos CLIs (terminal e seletor de arquivo do VS Code) */
@@ -109,6 +111,8 @@ export class RunController {
   private readonly capsInflight = new Map<string, Promise<Capabilities | undefined>>();
   /** caminhos que o seletor de arquivos devolveu: só estes podem ser anexados (a Webview não escolhe sozinha) */
   private readonly pickedPaths = new Set<string>();
+  /** imagens coladas que o próprio Visor gravou: ficam fora do projeto de propósito, então não avisamos */
+  private readonly pastedPaths = new Set<string>();
   /** posições/tamanhos que a pessoa escolheu no canvas (memória do host, como as conversas) */
   private readonly boxes = new Map<string, NodeBox>();
   /** chats que mudaram desde o último snapshot (para só reenviar o log do node inspecionado quando preciso) */
@@ -146,6 +150,8 @@ export class RunController {
         return;
       case 'pickFiles':
         return this.pickFiles(msg.requestId);
+      case 'pasteImage':
+        return this.pasteImage(msg.requestId, msg.mime, msg.data);
       case 'listClis':
         return this.listClis();
       case 'recheckCli':
@@ -327,6 +333,21 @@ export class RunController {
     this.flush();
   }
 
+  private async pasteImage(requestId: string, mime: string, data: string): Promise<void> {
+    let files: AttachedFile[] = [];
+    try {
+      const saved = await this.deps.savePastedImage(mime, Buffer.from(data, 'base64'));
+      files = await this.deps.checkAttachments([saved]);
+      for (const f of files) {
+        this.pickedPaths.add(f.path);
+        this.pastedPaths.add(f.path);
+      }
+    } catch {
+      this.notice('error', 'Não foi possível salvar a imagem colada.');
+    }
+    this.deps.post({ type: 'files', requestId, files });
+  }
+
   private async pickFiles(requestId: string): Promise<void> {
     let files: AttachedFile[] = [];
     try {
@@ -469,9 +490,9 @@ export class RunController {
   }
 
   private noticeOutside(files: AttachedFile[], cwd: string, chat?: Chat): void {
-    const outside = outsideFiles(files, cwd);
+    const outside = outsideFiles(files, cwd).filter((f) => !this.pastedPaths.has(f.path));
     if (outside.length) {
-      this.notice('warn', `Fora do projeto: ${outside.map((f) => f.name).join(', ')}. O agente recebe acesso somente leitura a eles, só nesta mensagem.`, chat);
+      this.notice('info', `Fora do projeto: ${outside.map((f) => f.name).join(', ')}. O agente recebe acesso somente leitura a eles, só nesta mensagem.`, chat);
     }
   }
 

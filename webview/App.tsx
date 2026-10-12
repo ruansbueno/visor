@@ -57,6 +57,7 @@ export function App() {
   const inputCtx = useMemo<InputCtx>(
     () => ({
       requestFiles: (requestId) => send({ type: 'pickFiles', requestId }),
+      pasteImage: (requestId, mime, data) => send({ type: 'pasteImage', requestId, mime, data }),
       picked: state.picked,
       consumePicked: () => dispatch({ type: 'files_consumed' }),
       commands: state.caps.commands,

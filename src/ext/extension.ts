@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import * as vscode from 'vscode';
 import { CAPABILITIES_ARGS, readCapabilities } from '../cli/capabilities';
 import { detectClis } from '../cli/clis';
@@ -111,6 +115,13 @@ export function activate(context: vscode.ExtensionContext): void {
         openLabel: 'Anexar',
       });
       return (picked ?? []).map((u) => u.fsPath);
+    },
+    savePastedImage: async (mime, bytes) => {
+      const dir = path.join(os.tmpdir(), 'visor-paste');
+      await mkdir(dir, { recursive: true });
+      const file = path.join(dir, `print-${Date.now()}-${randomUUID().slice(0, 8)}.${mime === 'image/jpeg' ? 'jpg' : mime.split('/')[1]}`);
+      await writeFile(file, bytes);
+      return file;
     },
     checkAttachments,
     prefs: {

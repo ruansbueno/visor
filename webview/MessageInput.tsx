@@ -16,6 +16,16 @@ export function filterCommands(commands: SlashItem[], query: string): SlashItem[
   return [...starts, ...hits.filter((c) => !starts.includes(c))].slice(0, MAX_ITEMS);
 }
 
+/** Lê um arquivo colado como base64 puro (sem o prefixo `data:...;base64,`). */
+function readBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ''));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 function mergeFiles(prev: AttachedFile[], next: AttachedFile[]): AttachedFile[] {
   const out = [...prev];
   for (const f of next) if (out.length < MAX_ATTACHMENTS && !out.some((o) => o.path === f.path)) out.push(f);
@@ -194,6 +204,16 @@ export function MessageInput(props: {
             setIndex(0);
           }}
           onSelect={(e) => syncCaret(e.currentTarget)}
+          onPaste={(e) => {
+            if (!allowAttach || disabled) return;
+            const images = Array.from(e.clipboardData.items).filter((it) => it.kind === 'file' && it.type.startsWith('image/'));
+            if (images.length === 0) return; // texto comum: o navegador cola normalmente
+            e.preventDefault();
+            for (const it of images.slice(0, Math.max(0, MAX_ATTACHMENTS - files.length))) {
+              const file = it.getAsFile();
+              if (file) void readBase64(file).then((data) => ctx.pasteImage(id, file.type, data)).catch(() => {});
+            }
+          }}
           onKeyDown={(e) => {
             if (open && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
               if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {

@@ -36,6 +36,7 @@ const controller = new RunController({
   listClis: () => detectClis(execText, { claude: 'claude', codex: 'codex' }),
   capabilities: (cwd) => readCapabilities({ command: 'claude', args: ['-p', '--output-format', 'stream-json', '--verbose', '--', 'hi'], cwd }),
   pickFiles: async () => toPick,
+  savePastedImage: async () => { throw new Error('não usado no e2e'); },
   checkAttachments,
   startRun: startProcessRun,
 });

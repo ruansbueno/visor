@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseWebviewMessage, describeRejected, MAX_PROMPT_BYTES } from '../src/protocol';
+import { parseWebviewMessage, describeRejected, MAX_PROMPT_BYTES, MAX_PASTE_BASE64 } from '../src/protocol';
 
 describe('parseWebviewMessage', () => {
   it('aceita ready, cancel e start válido', () => {
@@ -127,6 +127,16 @@ describe('parseWebviewMessage', () => {
     expect(parseWebviewMessage({ type: 'send', nodeId: 'r:root', text: '', attachments: ['/a'] })).toEqual({ type: 'send', nodeId: 'r:root', text: '', attachments: ['/a'] });
     expect(parseWebviewMessage({ type: 'send', nodeId: 'r:root', text: '   ' })).toBeNull();
     expect(parseWebviewMessage({ type: 'send', nodeId: 'r:root', text: 'x', attachments: [3] })).toBeNull();
+  });
+
+  it('pasteImage aceita só imagens conhecidas, base64 e tamanho limitado', () => {
+    const ok = { type: 'pasteImage', requestId: 'a', mime: 'image/png', data: 'aGVsbG8=' };
+    expect(parseWebviewMessage(ok)).toEqual(ok);
+    expect(parseWebviewMessage({ ...ok, mime: 'text/html' })).toBeNull();
+    expect(parseWebviewMessage({ ...ok, data: 'não é base64!' })).toBeNull();
+    expect(parseWebviewMessage({ ...ok, data: '' })).toBeNull();
+    expect(parseWebviewMessage({ ...ok, requestId: '' })).toBeNull();
+    expect(parseWebviewMessage({ ...ok, data: 'A'.repeat(MAX_PASTE_BASE64 + 4) })).toBeNull();
   });
 
   it('pickFiles, listClis e listCapabilities', () => {
