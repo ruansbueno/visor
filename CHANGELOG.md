@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5
+
+Corrige o travamento do Visor ao enviar muitas mensagens ao mesmo card: a conversa longa não é mais redesenhada por inteiro a cada atualização.
+
 ## 0.1.2
 
 Configuração inicial: procura o `claude`/`codex` fora do PATH do VS Code e o aviso de CLI ausente ou sem login ganha botões (instalar, escolher caminho, login, verificar de novo).

@@ -62,6 +62,7 @@ interface Turn {
 }
 
 const CAPS_TTL_MS = 60_000;
+const FLUSH_MS = 150; // intervalo entre atualizações da Webview durante a execução
 
 /** Acrescenta ao texto a lista de arquivos anexados (o agente lê pelas ferramentas dele). */
 function withAttachments(text: string, files: AttachedFile[]): string {
@@ -247,7 +248,7 @@ export class RunController {
     this.timer = setTimeout(() => {
       this.timer = undefined;
       this.postSnapshot();
-    }, this.deps.flushMs ?? 50);
+    }, this.deps.flushMs ?? FLUSH_MS);
   }
 
   private flush(): void {

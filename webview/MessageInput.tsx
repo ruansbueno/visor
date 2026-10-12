@@ -97,7 +97,9 @@ export function MessageInput(props: {
     el.style.height = `${Math.min(full, maxHeight)}px`;
     el.style.overflowY = full > maxHeight ? 'auto' : 'hidden';
   };
-  useLayoutEffect(measure);
+  // Só quando algo que muda o tamanho mudou: o cartão re-renderiza a cada trecho da conversa e medir força layout.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(measure, [text, placeholder, disabled, maxHeight, files.length, rows]);
   useEffect(() => {
     const el = ref.current;
     if (!el || typeof ResizeObserver === 'undefined') return;

@@ -11,7 +11,7 @@ function pretty(value: unknown): string {
   }
 }
 
-function Item({ item, userLabel }: { item: LogItem; userLabel: string }) {
+function ItemView({ item, userLabel }: { item: LogItem; userLabel: string }) {
   switch (item.kind) {
     case 'text':
       return (
@@ -54,6 +54,16 @@ function Item({ item, userLabel }: { item: LogItem; userLabel: string }) {
       );
   }
 }
+
+/** Cada flush traz objetos novos; só re-renderiza (e refaz o markdown) o item cujo conteúdo mudou. */
+const sameItem = (a: { item: LogItem; userLabel: string }, b: { item: LogItem; userLabel: string }): boolean => {
+  if (a.userLabel !== b.userLabel || a.item.kind !== b.item.kind || a.item.key !== b.item.key) return false;
+  const x = a.item as Record<string, unknown>;
+  const y = b.item as Record<string, unknown>;
+  return ['text', 'role', 'name', 'summary', 'status', 'result'].every((k) => x[k] === y[k]) &&
+    (x.attachments as string[] | undefined)?.join('\0') === (y.attachments as string[] | undefined)?.join('\0');
+};
+const Item = memo(ItemView, sameItem);
 
 /** A conversa de um node: texto, tool calls (resultado recolhido) e resultados. */
 export const LogList = memo(function LogList({ events, total, userLabel = 'Prompt' }: { events: EventView[] | null; total: number; userLabel?: string }) {
