@@ -1,5 +1,5 @@
 {
-  "name": "visor",
+  "name": "visor-for-ai-devs",
   "publisher": "ruansbueno",
   "version": "0.1.0",
   "private": true,
@@ -31,7 +31,7 @@
     "typescript": "^5.4.0",
     "vitest": "^2.0.0"
   },
-  "displayName": "Visor — Canvas de Agentes",
+  "displayName": "Visor - for AI devs",
   "description": "Mostra a execução de agentes do Claude Code como um grafo de nodes.",
   "main": "./dist/extension.cjs",
   "categories": [

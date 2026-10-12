@@ -1,4 +1,4 @@
-# Visor — Canvas de Agentes
+# Visor - for AI devs
 
 Veja o trabalho dos seus agentes de código como um **canvas**: cada conversa é um cartão, cada subagente um node ligado a ela, com o estado ao vivo (executando, aguardando resposta, concluído, erro).
 
