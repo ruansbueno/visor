@@ -1,15 +1,18 @@
 import type { CliCheck } from '../src/cli/detect';
 import type { CliId } from '../src/core/options';
 import type { CliInfo } from '../src/protocol';
+import { AccountMenu, type SetupAction } from './AccountMenu';
 import { MessageInput } from './MessageInput';
 import { OptionPills } from './OptionPills';
 import type { PillValues } from './option-lists';
+import type { Usage } from './state';
 
 export function Toolbar(props: {
-  /** diagnósticos por CLI (os que estão ok viram o rótulo discreto) */
-  auth: Partial<Record<CliId, CliCheck>> | null;
+  /** diagnósticos por CLI (instalação/login) */
+  checks: Partial<Record<CliId, CliCheck>>;
   starting: number;
-  usage?: { fiveHour?: number; sevenDay?: number; fiveHourResetsAt?: number } | null;
+  usage?: Usage | null;
+  onSetup(action: SetupAction): void;
   inert?: boolean;
   onStart(prompt: string, attachments: string[]): void;
   onCancelPending(): void;
@@ -21,7 +24,7 @@ export function Toolbar(props: {
   clis: CliInfo[];
   defaultModel?: string;
 }) {
-  const { auth, starting, usage, inert, onStart, onCancelPending, onNewChat, onNewAgent, quick, onQuick, clis, defaultModel } = props;
+  const { checks, starting, usage, onSetup, inert, onStart, onCancelPending, onNewChat, onNewAgent, quick, onQuick, clis, defaultModel } = props;
   return (
     <div className="toolbar" {...(inert ? { inert: '' } : {})}>
       <MessageInput
@@ -41,19 +44,7 @@ export function Toolbar(props: {
             <button className="secondary small" onClick={onCancelPending}>Cancelar início</button>
           </span>
         )}
-        {usage?.fiveHour !== undefined && (
-          <span className="auth-chip" title={`Uso da sessão de 5h${usage.fiveHourResetsAt ? ` (renova às ${new Date(usage.fiveHourResetsAt * 1000).toLocaleTimeString()})` : ''}${usage.sevenDay !== undefined ? `; semana: ${Math.round(usage.sevenDay * 100)}%` : ''}. Informado pelo Claude Code.`}>
-            Sessão 5h: {Math.round(usage.fiveHour * 100)}%
-          </span>
-        )}
-        {(['claude', 'codex'] as const).map((id) => {
-          const c = auth?.[id];
-          return c?.state === 'ok' ? (
-            <span key={id} className="auth-chip" title={`Autenticação via CLI ${id === 'codex' ? 'do Codex' : 'do Claude Code'} ${c.version}. A extensão não acessa suas credenciais.`}>
-              {id === 'codex' ? `Codex: ${c.authMethod}` : `Auth: ${c.authMethod}`}
-            </span>
-          ) : null;
-        })}
+        <AccountMenu checks={checks} usage={usage ?? null} onSetup={onSetup} />
       </div>
     </div>
   );

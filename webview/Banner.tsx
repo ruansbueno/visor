@@ -1,9 +1,8 @@
 import type { CliCheck } from '../src/cli/detect';
 import type { CliId } from '../src/core/options';
-import type { WebviewMessage } from '../src/protocol';
+import type { SetupAction } from './AccountMenu';
 import type { Notice } from './state';
 
-type SetupAction = Extract<WebviewMessage, { type: 'recheckCli' | 'installCli' | 'loginCli' | 'pickCliPath' }>;
 
 export function Banner(props: {
   checks: Partial<Record<CliId, CliCheck>>;

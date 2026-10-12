@@ -218,3 +218,19 @@ textarea { resize: none; }
 .chat-card .pill { padding: 0 8px; }
 .chat-card .pill select { max-width: 110px; }
 .chat-cli { font-size: .75em; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; white-space: nowrap; }
+.account-menu { position: relative; display: inline-flex; }
+.icon-btn.gear { font-size: 1.5em; width: 32px; height: 32px; }
+.icon-btn.gear.has-problem { color: var(--error); }
+.account-panel { box-sizing: border-box; position: fixed; z-index: 20; max-height: calc(100vh - 16px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); box-shadow: 0 4px 16px rgba(0, 0, 0, .35); }
+.account-head { display: flex; justify-content: space-between; gap: 8px; }
+.account-state.ok { color: var(--running); }
+.account-state.not_authenticated, .account-state.not_installed { color: var(--error); }
+.account-cli { display: flex; flex-direction: column; gap: 4px; }
+.account-cli + .account-cli { border-top: 1px solid var(--border); padding-top: 8px; }
+.account-cli .setup-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.usage { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.usage-row { display: grid; grid-template-columns: 6.5em 1fr 3em; gap: 4px 8px; align-items: center; }
+.usage-row .usage-reset { grid-column: 1 / -1; }
+.usage-bar { height: 6px; border-radius: 3px; background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, .12)); overflow: hidden; }
+.usage-bar > span { display: block; height: 100%; background: var(--running); }
+.usage-reset { font-size: .85em; color: var(--muted); }

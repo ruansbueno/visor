@@ -7,6 +7,7 @@ export interface Notice {
   level: 'info' | 'warn' | 'error';
   text: string;
 }
+export interface Usage { fiveHour?: number; sevenDay?: number; fiveHourResetsAt?: number; sevenDayResetsAt?: number }
 export interface ViewState {
   /** diagnóstico (instalação/login) por CLI */
   checks: Partial<Record<CliId, CliCheck>>;
@@ -17,7 +18,7 @@ export interface ViewState {
   /** inícios de conversa em andamento no host (detecção do CLI, confirmação) */
   starting: number;
   /** limites da assinatura (fração 0..1) do último evento do CLI */
-  usage: { fiveHour?: number; sevenDay?: number; fiveHourResetsAt?: number; sevenDayResetsAt?: number } | null;
+  usage: Usage | null;
   agents: AgentInfo[];
   clis: CliInfo[];
   /** skills/comandos e modelo padrão informados pelo CLI */

@@ -340,7 +340,7 @@ it('inspetor sem botões de chat; fecha sozinho se o chat some', async () => {
 });
 
 // ---------- avisos, auth ----------
-it('o aviso de autenticação tem × que avisa o host; depois de dispensado vira um rótulo discreto', async () => {
+it('o aviso de autenticação tem × que avisa o host; a engrenagem mostra a conta e o uso', async () => {
   const root = await mount();
   await send({ type: 'prefs', authBannerDismissed: false });
   await send({ type: 'cli', check: ok });
@@ -348,7 +348,21 @@ it('o aviso de autenticação tem × que avisa o host; depois de dispensado vira
   await click(byLabel('Dispensar aviso de autenticação')!);
   expect(posted).toContainEqual({ type: 'dismissAuth' });
   await send({ type: 'prefs', authBannerDismissed: true });
-  expect(document.querySelector('.auth-chip')!.getAttribute('title')).toContain('2.1.287');
+  await click(byLabel('Conta e uso')!);
+  const panel = document.querySelector('[role="dialog"][aria-label="Conta e uso"]')!;
+  expect(panel.textContent).toContain('claude.ai');
+  expect(panel.textContent).toContain('2.1.287');
+  expect(panel.textContent).toContain('depois da primeira mensagem');
+  const reset = Math.floor(Date.now() / 1000) + 2 * 3600;
+  await send({ type: 'usage', fiveHour: 0.12, sevenDay: 0.5, fiveHourResetsAt: reset, sevenDayResetsAt: reset + 86400 });
+  expect(panel.textContent).toContain('12%');
+  expect(panel.textContent).toContain('50%');
+  expect(panel.textContent).toContain('reinicia em');
+  // clicar fora fecha, mesmo se o canvas engolir o evento
+  const pane = document.querySelector('.react-flow__pane')!;
+  pane.addEventListener('pointerdown', (e) => e.stopPropagation());
+  await act(async () => { pane.dispatchEvent(new Event('pointerdown', { bubbles: true })); });
+  expect(document.querySelector('[role="dialog"][aria-label="Conta e uso"]')).toBeNull();
   await unmount(root);
 });
 
@@ -1205,7 +1219,12 @@ it('o diagnóstico de login aparece por CLI: Claude e Codex juntos; um problema 
   expect(document.querySelector('.banner.error')!.textContent).toContain('Rode codex login.');
   expect(document.querySelector('.banner.info')!.textContent).toContain('claude.ai'); // o Claude segue ok
   await send({ type: 'prefs', authBannerDismissed: true });
-  expect([...document.querySelectorAll('.auth-chip')].map((c) => c.textContent)).toEqual(['Auth: claude.ai']);
+  await click(byLabel('Conta e uso')!);
+  const panel = document.querySelector('[role="dialog"][aria-label="Conta e uso"]')!;
+  expect(panel.textContent).toContain('Codex');
+  expect(panel.textContent).toContain('sem login');
+  await click([...panel.querySelectorAll('button')].find((b) => b.textContent === 'Fazer login') as HTMLButtonElement);
+  expect(posted).toContainEqual({ type: 'loginCli', cli: 'codex' });
   await unmount(root);
 });
 

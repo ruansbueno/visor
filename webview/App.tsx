@@ -124,9 +124,10 @@ export function App() {
       </div>
       <Toolbar
         inert={inert}
-        auth={state.authDismissed ? state.checks : null}
+        checks={state.checks}
         starting={state.starting}
         usage={state.usage}
+        onSetup={send}
         quick={quick}
         onQuick={setQuick}
         clis={state.clis}
