@@ -15,7 +15,6 @@ describe('listas por CLI', () => {
     const p = permissionChoices('codex');
     expect(values(p)).toEqual(['', 'read-only', 'workspace-write', 'danger-full-access']);
     expect(p.find((x) => x.value === 'read-only')!.label).toMatch(/leitura/i);
-    expect(p.find((x) => x.value === 'danger-full-access')!.label).toMatch(/confirma/i);
   });
   it('o "Padrão" mostra o modelo real quando conhecido', () => {
     expect(modelChoices('claude', 'claude-sonnet-5-5')[0]!.label).toContain('claude-sonnet-5-5');

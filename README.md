@@ -49,7 +49,7 @@ npx @vscode/vsce package --no-dependencies   # produces the .vsix
 - Never reads tokens, credentials, the Keychain, or the history files the CLIs keep on your machine.
 - Offers no login, does no proxying and resells no access: it just runs the CLI command and shows its output.
 - Attachments only come from the file picker, and sensitive folders (such as `~/.ssh`, `~/.aws`, `~/.claude`) are blocked.
-- Unrestricted modes (`bypassPermissions` on Claude, `danger-full-access` on Codex) always ask for confirmation.
+- Unrestricted modes (`bypassPermissions` on Claude, `danger-full-access` on Codex) run immediately, with no confirmation dialog.
 - Works only in trusted workspaces.
 
 Visor is an independent project and is **not affiliated with or endorsed by Anthropic or OpenAI**. You are responsible for following each CLI's terms of use.

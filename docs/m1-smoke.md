@@ -12,7 +12,7 @@ Pré-requisitos: `npm run build`; `claude` instalado e autenticado.
 4. Rode de novo com `Write a 300-word story about a robot.` e clique **Cancelar** logo no início. Esperado: nós em "cancelado", aviso "Execução cancelada.", e `pgrep -fl "claude.*stream-json"` não lista nada.
 5. Com um run em andamento, feche a aba do canvas e reabra pelo comando. Esperado: o canvas volta com o estado atual do run.
 6. Configurações → Visor: `Claude Path` = `/caminho/que/nao/existe`; Executar. Esperado: aviso pedindo para instalar/configurar, nenhum processo criado.
-7. Volte o caminho ao padrão; mude `Permission Mode` para `bypassPermissions`; Executar. Esperado: diálogo modal de confirmação; "Cancelar" no diálogo não inicia o run.
+7. Volte o caminho ao padrão; mude `Permission Mode` para `bypassPermissions`; Executar. Esperado: o run inicia direto, sem diálogo de confirmação.
 8. Janela estreita (< 480 px): toolbar empilha, sem rolagem horizontal. Tema claro e escuro legíveis.
 9. Fechar a janela do Extension Development Host com um run ativo não deixa processo `claude` órfão.
 

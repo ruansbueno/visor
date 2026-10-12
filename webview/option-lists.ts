@@ -21,7 +21,7 @@ export interface PillValues {
 const SANDBOX_LABELS: Record<SandboxMode, string> = {
   'read-only': 'Somente leitura',
   'workspace-write': 'Editar o projeto',
-  'danger-full-access': 'Acesso total (pede confirmação)',
+  'danger-full-access': 'Acesso total',
 };
 
 /** Claude: aliases fixos. Codex: o catálogo que o próprio CLI informa (sem lista inventada). */
@@ -42,7 +42,7 @@ export function permissionChoices(cli: CliId): Choice[] {
   const rest =
     cli === 'codex'
       ? SANDBOX_MODES.map((m) => ({ value: m, label: SANDBOX_LABELS[m] }))
-      : PERMISSION_MODES.map((m) => ({ value: m, label: m === 'bypassPermissions' ? 'bypassPermissions (pede confirmação)' : m }));
+      : PERMISSION_MODES.map((m) => ({ value: m, label: m === 'bypassPermissions' ? 'bypassPermissions' : m }));
   return [{ value: '', label: 'Padrão' }, ...rest];
 }
 

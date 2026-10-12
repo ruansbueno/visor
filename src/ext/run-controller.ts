@@ -22,7 +22,6 @@ export interface ControllerDeps {
   cwd(): string | undefined;
   settings(): VisorSettings;
   detect(command: string, cli?: CliId): Promise<CliCheck>;
-  confirmBypass(): Promise<boolean>;
   prefs: { authBannerDismissed(): boolean; dismissAuthBanner(): void };
   listAgents(cwd: string): Promise<AgentInfo[]>;
   listClis(): Promise<CliInfo[]>;
@@ -95,13 +94,6 @@ function lastErrorEvent(store: RunStore): string | undefined {
   const errors = store.eventsOf(store.rootId).filter((e) => e.kind === 'error');
   const last = errors[errors.length - 1]?.payload;
   return typeof last === 'string' && last ? last.slice(-500) : undefined;
-}
-
-/** O chat roda sem restrições (bypassPermissions no Claude, danger-full-access no Codex): exige confirmação. */
-function isUnrestricted(cli: CliId, options: ChatOptions | undefined, settings: VisorSettings): boolean {
-  return cli === 'codex'
-    ? (options?.sandbox ?? settings.codexSandbox) === 'danger-full-access'
-    : (options?.permissionMode ?? settings.permissionMode) === 'bypassPermissions';
 }
 
 export class RunController {
@@ -532,11 +524,6 @@ export class RunController {
       this.deps.post({ type: 'cli', check, cli });
       if (check.state === 'not_installed' || check.state === 'not_authenticated') return;
 
-      // Cancelar durante a detecção não deve nem abrir o modal de confirmação.
-      if (!token.cancelled && isUnrestricted(cli, options, settings) && !(await this.deps.confirmBypass())) {
-        this.notice('info', 'Execução não iniciada: o acesso sem restrições não foi confirmado.');
-        return;
-      }
       if (token.cancelled) {
         this.notice('info', 'Execução cancelada.');
         return;
@@ -625,10 +612,6 @@ export class RunController {
           this.lastChecks.set(cli, check);
           this.deps.post({ type: 'cli', check, cli });
           if (check.state === 'not_installed' || check.state === 'not_authenticated') return;
-        }
-        if (isUnrestricted(cli, options, settings) && !(await this.deps.confirmBypass())) {
-          this.notice('info', 'Execução não iniciada: o acesso sem restrições não foi confirmado.', chat);
-          return;
         }
         if (chat.cancelRequested) {
           this.notice('info', 'Execução cancelada.', chat);

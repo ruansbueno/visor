@@ -75,15 +75,6 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.workspace.getConfiguration('visor').update(PATH_KEY[cli], p, vscode.ConfigurationTarget.Global);
       },
     },
-    confirmBypass: async () => {
-      const yes = 'Executar sem restrições';
-      const pick = await vscode.window.showWarningMessage(
-        'Este chat vai rodar sem restrições (bypassPermissions no Claude Code, danger-full-access no Codex): o agente pode executar qualquer comando e alterar qualquer arquivo sem pedir aprovação. Continuar?',
-        { modal: true },
-        yes,
-      );
-      return pick === yes;
-    },
     listAgents: listProjectAgents,
     listClis: async () => {
       await Promise.all([ensureCli('claude', false), ensureCli('codex', false)]);

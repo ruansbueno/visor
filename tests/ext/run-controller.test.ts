@@ -36,7 +36,6 @@ function setup(over: Partial<ControllerDeps> = {}, settings: Partial<VisorSettin
     cwd: () => '/proj',
     settings: () => ({ ...DEFAULT_SETTINGS, ...settings }),
     detect: async () => OK,
-    confirmBypass: async () => true,
     startRun: startRun as any,
     listAgents: async () => [{ name: 'reader', description: 'Lê arquivos' }],
     listClis: async () => [{ id: 'claude', label: 'Claude Code', version: '2.1.287', supported: true }],
@@ -241,15 +240,11 @@ describe('RunController: iniciar chats', () => {
     expect(t.notices().at(-1)!.text).toMatch(/Permission denied for Bash/);
   });
 
-  it('bypassPermissions sem confirmação não cria chat; com confirmação cria', async () => {
-    const mode = { permissionMode: 'bypassPermissions' as const };
-    const no = setup({ confirmBypass: async () => false }, mode);
-    await no.c.handle({ type: 'start', prompt: 'x' });
-    expect(no.startRun).not.toHaveBeenCalled();
-    expect(no.snaps().at(-1)?.runs ?? []).toEqual([]);
-    const yes = setup({}, mode);
+  it('bypassPermissions inicia direto, sem diálogo de confirmação', async () => {
+    const yes = setup({}, { permissionMode: 'bypassPermissions' });
     const p = (await startChat(yes)).done;
     expect(yes.startRun).toHaveBeenCalledTimes(1);
+    expect(yes.runs[0]!.opts.args).toEqual(expect.arrayContaining(['--permission-mode', 'bypassPermissions']));
     yes.runs[0]!.finish();
     await p;
   });
@@ -651,17 +646,6 @@ describe('RunController: revisão dos chats', () => {
     await a;
   });
 
-  it('cancelAll durante a detecção em bypassPermissions NÃO abre o modal de confirmação', async () => {
-    const confirmBypass = vi.fn(async () => true);
-    const t = setup({ detect: () => new Promise((r) => setTimeout(() => r(OK), 30)), confirmBypass }, { permissionMode: 'bypassPermissions' });
-    const p = t.c.handle({ type: 'start', prompt: 'x' });
-    await t.tick(5);
-    t.c.cancelAll();
-    await p;
-    expect(confirmBypass).not.toHaveBeenCalled();
-    expect(t.startRun).not.toHaveBeenCalled();
-  });
-
   it('removeChat remove um chat parado, fecha a inspeção dele e não mexe nos outros', async () => {
     const t = setup();
     const a = await waitingChat(t);
@@ -870,14 +854,6 @@ describe('RunController: opções do chat, anexos, CLIs e capacidades', () => {
     expect(t.runs[1]!.opts.args).toEqual(expect.arrayContaining(['--resume', 'sess-r1', '--model', 'sonnet', '--effort', 'low']));
     t.runs[1]!.finish();
     await q;
-  });
-
-  it('permissionMode bypassPermissions escolhido no chat exige a confirmação, mesmo com as settings padrão', async () => {
-    const confirmBypass = vi.fn(async () => false);
-    const t = setup({ confirmBypass });
-    await t.c.handle({ type: 'start', prompt: 'x', options: { permissionMode: 'bypassPermissions' } });
-    expect(confirmBypass).toHaveBeenCalledTimes(1);
-    expect(t.startRun).not.toHaveBeenCalled();
   });
 
   /** regras depois de --allowedTools, até a próxima flag */
@@ -1116,17 +1092,6 @@ describe('RunController: Codex e opções editáveis', () => {
     expect(argsOf(t)).toEqual(expect.arrayContaining(['-s', 'read-only']));
     t.runs[0]!.finish();
     await p;
-  });
-
-  it('danger-full-access exige a confirmação; recusar não inicia nada', async () => {
-    const confirmBypass = vi.fn(async () => false);
-    const t = setup({ confirmBypass });
-    await t.c.handle({ type: 'start', prompt: 'x', options: { cli: 'codex', sandbox: 'danger-full-access' } });
-    expect(confirmBypass).toHaveBeenCalledTimes(1);
-    expect(t.startRun).not.toHaveBeenCalled();
-    const viaSettings = setup({ confirmBypass }, { codexSandbox: 'danger-full-access' });
-    await viaSettings.c.handle({ type: 'start', prompt: 'x', options: { cli: 'codex' } });
-    expect(confirmBypass).toHaveBeenCalledTimes(2);
   });
 
   it('opções que não combinam com a CLI são recusadas com aviso claro e nada é criado', async () => {

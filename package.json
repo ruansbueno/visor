@@ -1,7 +1,7 @@
 {
   "name": "visor-for-ai-devs",
   "publisher": "ruansbueno",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -70,7 +70,7 @@
             "dontAsk",
             "plan"
           ],
-          "markdownDescription": "Modo de permissões do `claude -p` (modo painel é headless, sem aprovação interativa). `bypassPermissions` exige confirmação a cada execução."
+          "markdownDescription": "Modo de permissões do `claude -p` (modo painel é headless, sem aprovação interativa)."
         },
         "visor.allowedTools": {
           "type": "array",
@@ -108,7 +108,7 @@
             "workspace-write",
             "danger-full-access"
           ],
-          "markdownDescription": "Sandbox padrão dos chats do **Codex** (equivalente às permissões do Claude Code). `danger-full-access` exige confirmação a cada execução."
+          "markdownDescription": "Sandbox padrão dos chats do **Codex** (equivalente às permissões do Claude Code)."
         }
       }
     },

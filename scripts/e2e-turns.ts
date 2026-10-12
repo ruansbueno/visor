@@ -31,7 +31,6 @@ const controller = new RunController({
   cwd: () => cwd,
   settings: () => DEFAULT_SETTINGS,
   detect: (c, cli) => (cli === 'codex' ? detectCodex(execText, c) : detectClaude(execText, c)),
-  confirmBypass: async () => false,
   prefs: { authBannerDismissed: () => false, dismissAuthBanner: () => {} },
   listAgents: listProjectAgents,
   listClis: () => detectClis(execText, { claude: 'claude', codex: 'codex' }),
