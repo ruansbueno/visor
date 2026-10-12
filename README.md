@@ -17,12 +17,13 @@ Visor is a **visual wrapper around the CLIs you already have installed**. It is 
 
 ## Install
 
-Visor is not on the Marketplace yet. Install it from GitHub:
+Visor is on the VS Code Marketplace:
 
-1. Open the [latest release](https://github.com/ruansbueno/visor/releases/latest) and download the `visor-for-ai-devs-*.vsix` file.
-2. In VS Code, open the Extensions view (`Cmd/Ctrl+Shift+X`), click the `…` menu at the top right, choose **Install from VSIX…** and select the file.
-   Or from a terminal: `code --install-extension visor-for-ai-devs-*.vsix`
-3. Click the Visor icon (a circle of dots) in the activity bar, or run **Visor: Open agents canvas** from the Command Palette.
+1. In VS Code, open the Extensions view (`Cmd/Ctrl+Shift+X`), search for **Visor - for AI devs** and click **Install**.
+   Or from a terminal: `code --install-extension ruansbueno.visor-for-ai-devs`
+2. Click the Visor icon (a circle of dots) in the activity bar, or run **Visor: Open agents canvas** from the Command Palette.
+
+Prefer a manual install? Download the `visor-for-ai-devs-*.vsix` from the [latest release](https://github.com/ruansbueno/visor/releases/latest) and use **Install from VSIX…** in the Extensions view `…` menu.
 
 Make sure at least one CLI below is installed **and that you have logged in to it yourself** (run `claude` or `codex` once in a terminal).
 
