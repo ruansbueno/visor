@@ -76,3 +76,14 @@ Verificação automatizada parcial (host contra o claude real): `npx tsx scripts
 42. **Alças de redimensionar do cartão**: escondidas; aparecem só quando o mouse chega ao **canto** do cartão (as bordas também arrastam).
 
 Conferido em captura de tela real (Chrome sem cabeça com o bundle e o tema escuro): barra de baixo, cartões, diálogo de novo chat e de novo agente, **menu `/` dentro do diálogo** (aparece acima do campo) e texto longo na barra. **Não** conferido visualmente: o aparecimento da alça no canto com o mouse em cima, e o tema claro.
+
+## Pós-M1 (6): Codex, opções editáveis e barra lateral
+
+43. **Ícone do Visor** na barra lateral (círculo de pontos): clicar abre o canvas no editor; o botão "Abrir canvas" reabre se a aba foi fechada.
+44. **Barra inferior**: pílulas CLI (com 2 ou mais CLIs), Modelo, Esforço e Permissões; "Auth: claude.ai" e "Codex: ChatGPT". Com Codex, o `/` some e as permissões viram sandbox (Somente leitura / Editar o projeto / Acesso total, que pede confirmação).
+45. **Modelos do Codex** vêm do catálogo do CLI; o esforço lista só o que o modelo aceita.
+46. **Cartão**: etiqueta da CLI e pílulas no rodapé; a troca vale da próxima mensagem. O cartão Codex não tem "+ agente", `/` nem anexo. Mande duas mensagens no Codex (retomada) e peça uma escrita em "Somente leitura" (deve ser bloqueada).
+47. **Borda dos cartões** em roxo (erro e pergunta mantêm cor própria); cartão novo nasce com 540px.
+
+Não verificado: `max`/`ultra` e os modelos do catálogo rodando de fato, eventos do Codex além de mensagem/comando/erro, tema claro, Windows/Linux.
+
