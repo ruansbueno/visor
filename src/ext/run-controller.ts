@@ -32,6 +32,13 @@ export interface ControllerDeps {
   pickFiles(): Promise<string[]>;
   /** confere quais caminhos existem e se são pastas */
   checkAttachments(paths: string[]): Promise<AttachedFile[]>;
+  /** configuração inicial dos CLIs (terminal e seletor de arquivo do VS Code) */
+  setup?: {
+    install(cli: CliId): void;
+    login(cli: CliId, command: string): void;
+    pickPath(cli: CliId): Promise<string | undefined>;
+    savePath(cli: CliId, path: string): void;
+  };
   nowMs?(): number;
   homedir?(): string;
   startRun(runId: string, opts: ProcessRunOptions, onEvent: (e: NormalizedEvent) => void): ProcessRun;
@@ -148,6 +155,16 @@ export class RunController {
         return this.pickFiles(msg.requestId);
       case 'listClis':
         return this.listClis();
+      case 'recheckCli':
+        return this.recheckCli(msg.cli);
+      case 'installCli':
+        this.deps.setup?.install(msg.cli);
+        return;
+      case 'loginCli':
+        this.deps.setup?.login(msg.cli, this.commandOf(msg.cli));
+        return;
+      case 'pickCliPath':
+        return this.pickCliPath(msg.cli);
       case 'listCapabilities':
         return this.listCapabilities();
       case 'spawn':
@@ -332,6 +349,46 @@ export class RunController {
       files = [];
     }
     this.deps.post({ type: 'files', requestId, files });
+  }
+
+  private commandOf(cli: CliId): string {
+    const s = this.deps.settings();
+    return cli === 'codex' ? s.codexPath : s.claudePath;
+  }
+
+  private async checkCli(cli: CliId, command = this.commandOf(cli)): Promise<CliCheck> {
+    const check = await this.deps.detect(command, cli);
+    this.lastChecks.set(cli, check);
+    return check;
+  }
+
+  /** Sem `only`, verifica os dois ao abrir o canvas; um CLI ausente que a pessoa nunca pediu fica quieto. */
+  private async recheckCli(only?: CliId): Promise<void> {
+    const ids: CliId[] = only ? [only] : ['claude', 'codex'];
+    await Promise.all(
+      ids.map(async (cli) => {
+        const check = await this.checkCli(cli);
+        if (!only && check.state === 'not_installed' && cli !== 'claude') {
+          this.lastChecks.delete(cli);
+          return;
+        }
+        this.deps.post({ type: 'cli', check, cli });
+      }),
+    );
+  }
+
+  private async pickCliPath(cli: CliId): Promise<void> {
+    const picked = await this.deps.setup?.pickPath(cli);
+    if (!picked) return;
+    const check = await this.deps.detect(picked, cli);
+    if (check.state === 'not_installed') {
+      this.notice('error', `Esse arquivo não respondeu a --version como o ${cli === 'codex' ? 'Codex' : 'Claude Code'}: ${picked}`);
+      return;
+    }
+    this.deps.setup?.savePath(cli, picked);
+    this.lastChecks.set(cli, check);
+    this.deps.post({ type: 'cli', check, cli });
+    void this.listClis();
   }
 
   private async listClis(): Promise<void> {

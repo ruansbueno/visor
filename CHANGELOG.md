@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+Configuração inicial: procura o `claude`/`codex` fora do PATH do VS Code e o aviso de CLI ausente ou sem login ganha botões (instalar, escolher caminho, login, verificar de novo).
+
 ## 0.1.1
 
 README em inglês na página da extensão.

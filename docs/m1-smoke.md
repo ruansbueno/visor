@@ -84,6 +84,7 @@ Conferido em captura de tela real (Chrome sem cabeça com o bundle e o tema escu
 45. **Modelos do Codex** vêm do catálogo do CLI; o esforço lista só o que o modelo aceita.
 46. **Cartão**: etiqueta da CLI e pílulas no rodapé; a troca vale da próxima mensagem. O cartão Codex não tem "+ agente", `/` nem anexo. Mande duas mensagens no Codex (retomada) e peça uma escrita em "Somente leitura" (deve ser bloqueada).
 47. **Borda dos cartões** em roxo (erro e pergunta mantêm cor própria); cartão novo nasce com 540px.
+48. **Configuração inicial**: com `claude` fora do PATH do VS Code (ex.: abra o VS Code pelo Dock com o CLI só em `~/.local/bin` ou nvm), o Visor deve achá-lo sozinho. Sem CLI instalado, o aviso mostra Instalar (abre terminal com o comando), Escolher caminho… (grava `visor.claudePath` se o arquivo responder a `--version`) e Verificar de novo. Sem login, Fazer login abre o terminal. Codex ausente não gera aviso até ser escolhido.
 
 Não verificado: `max`/`ultra` e os modelos do catálogo rodando de fato, eventos do Codex além de mensagem/comando/erro, tema claro, Windows/Linux.
 

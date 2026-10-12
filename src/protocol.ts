@@ -1,6 +1,6 @@
 import type { NodeStatus, Question } from './core/schema';
 import type { CliCheck } from './cli/detect';
-import { parseAttachments, parseChatOptions, type ChatOptions, type CliId, type Effort } from './core/options';
+import { CLI_IDS, parseAttachments, parseChatOptions, type ChatOptions, type CliId, type Effort } from './core/options';
 
 export type { ChatOptions, CliId };
 
@@ -110,7 +110,12 @@ export type WebviewMessage =
   | { type: 'pickFiles'; requestId: string }
   | { type: 'listClis' }
   | { type: 'listCapabilities' }
-  | { type: 'listAgents' };
+  | { type: 'listAgents' }
+  /** configuração inicial: refaz a detecção (sem cli = os dois, sem incomodar com um Codex ausente) */
+  | { type: 'recheckCli'; cli?: CliId }
+  | { type: 'installCli'; cli: CliId }
+  | { type: 'loginCli'; cli: CliId }
+  | { type: 'pickCliPath'; cli: CliId };
 
 const MAX_NODE_ID_CHARS = 300;
 const MAX_TITLE_CHARS = 200;
@@ -139,6 +144,8 @@ function validText(v: unknown, hasAttachments: boolean): v is string {
 
 const coord = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= MAX_COORD;
 const size = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= MIN_SIZE && v <= MAX_SIZE;
+
+const isCliId = (v: unknown): v is CliId => (CLI_IDS as readonly unknown[]).includes(v);
 
 function validNodeId(v: unknown): v is string {
   return typeof v === 'string' && v.length > 0 && v.length <= MAX_NODE_ID_CHARS;
@@ -215,6 +222,13 @@ export function parseWebviewMessage(raw: unknown): WebviewMessage | null {
     }
     case 'listAgents':
       return { type: 'listAgents' };
+    case 'recheckCli':
+      if (m.cli === undefined) return { type: 'recheckCli' };
+      return isCliId(m.cli) ? { type: 'recheckCli', cli: m.cli } : null;
+    case 'installCli':
+    case 'loginCli':
+    case 'pickCliPath':
+      return isCliId(m.cli) ? { type: m.type, cli: m.cli } : null;
     default:
       return null;
   }

@@ -27,6 +27,8 @@ button.danger { background: var(--vscode-errorForeground, #c33); color: #fff; }
 button.link { background: none; color: inherit; padding: 0 4px; font-size: 1.2em; }
 .banners { display: flex; flex-direction: column; gap: 4px; padding: 8px 16px 0; }
 .banner { display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px; border-radius: 4px; border-left: 3px solid var(--muted); background: var(--card); }
+.setup-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex-shrink: 0; }
+.setup-actions button { padding: 2px 10px; }
 .banner.error { border-left-color: var(--error); }
 .banner.warn { border-left-color: var(--cancelled); }
 .banner.info { border-left-color: var(--running); }

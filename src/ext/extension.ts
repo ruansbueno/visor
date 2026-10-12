@@ -2,30 +2,79 @@ import * as vscode from 'vscode';
 import { CAPABILITIES_ARGS, readCapabilities } from '../cli/capabilities';
 import { detectClis } from '../cli/clis';
 import { detectClaude, detectCodex, execText } from '../cli/detect';
+import { findCli, installCommand, loginCommand } from '../cli/locate';
+import type { CliId } from '../core/options';
 import { startProcessRun } from '../cli/process-run';
 import { describeRejected, parseWebviewMessage, type HostMessage } from '../protocol';
 import { buildWebviewHtml, makeNonce } from './html';
 import { listProjectAgents } from './agents';
 import { checkAttachments } from './files';
 import { RunController } from './run-controller';
-import { parseSettings } from './settings';
+import { DEFAULT_SETTINGS, parseSettings, type VisorSettings } from './settings';
 
 const AUTH_DISMISSED_KEY = 'visor.authBannerDismissed';
+
+const PATH_KEY: Record<CliId, 'claudePath' | 'codexPath'> = { claude: 'claudePath', codex: 'codexPath' };
+const RETRY_MS = 30_000;
 
 export function activate(context: vscode.ExtensionContext): void {
   const log = vscode.window.createOutputChannel('Visor');
   let panel: vscode.WebviewPanel | undefined;
+
+  // Com o caminho no padrão, o VS Code pode não enxergar o CLI que o terminal enxerga (PATH diferente):
+  // procuramos nos lugares usuais e lembramos o achado nesta sessão (não mexe na configuração).
+  const found: Partial<Record<CliId, string>> = {};
+  const lastTry: Partial<Record<CliId, number>> = {};
+  const readSettings = (): VisorSettings => {
+    const cfg = parseSettings((key) => vscode.workspace.getConfiguration('visor').get(key));
+    return {
+      ...cfg,
+      claudePath: cfg.claudePath === DEFAULT_SETTINGS.claudePath ? (found.claude ?? cfg.claudePath) : cfg.claudePath,
+      codexPath: cfg.codexPath === DEFAULT_SETTINGS.codexPath ? (found.codex ?? cfg.codexPath) : cfg.codexPath,
+    };
+  };
+  const ensureCli = async (cli: CliId, force: boolean): Promise<void> => {
+    const cfg = parseSettings((key) => vscode.workspace.getConfiguration('visor').get(key));
+    if (cfg[PATH_KEY[cli]] !== DEFAULT_SETTINGS[PATH_KEY[cli]] || found[cli]) return;
+    if (!force && Date.now() - (lastTry[cli] ?? 0) < RETRY_MS) return;
+    lastTry[cli] = Date.now();
+    if (!(await execText(DEFAULT_SETTINGS[PATH_KEY[cli]], ['--version'])).spawnError) return;
+    const where = await findCli(cli, execText);
+    if (where) found[cli] = where;
+  };
+  const openTerminal = (name: string, text: string) => {
+    const t = vscode.window.createTerminal({ name, ...(process.platform === 'win32' ? { shellPath: 'powershell.exe' } : {}) });
+    t.show();
+    t.sendText(text, true);
+  };
 
   const controller = new RunController({
     post: (msg: HostMessage) => {
       void panel?.webview.postMessage(msg);
     },
     cwd: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-    settings: () => {
-      const cfg = vscode.workspace.getConfiguration('visor');
-      return parseSettings((key) => cfg.get(key));
+    settings: readSettings,
+    detect: async (command, cli = 'claude') => {
+      await ensureCli(cli, true);
+      const cmd = command === DEFAULT_SETTINGS[PATH_KEY[cli]] ? (found[cli] ?? command) : command;
+      return cli === 'codex' ? detectCodex(execText, cmd) : detectClaude(execText, cmd);
     },
-    detect: (command, cli) => (cli === 'codex' ? detectCodex(execText, command) : detectClaude(execText, command)),
+    setup: {
+      install: (cli) => openTerminal(`Visor: instalar ${cli === 'codex' ? 'Codex' : 'Claude Code'}`, installCommand(cli, process.platform)),
+      login: (cli, command) => openTerminal(`Visor: login ${cli === 'codex' ? 'Codex' : 'Claude Code'}`, loginCommand(cli, command, process.platform)),
+      pickPath: async (cli) => {
+        const picked = await vscode.window.showOpenDialog({
+          canSelectMany: false,
+          openLabel: 'Usar este executável',
+          title: cli === 'codex' ? 'Escolha o executável do Codex' : 'Escolha o executável do Claude Code',
+        });
+        return picked?.[0]?.fsPath;
+      },
+      savePath: (cli, p) => {
+        delete found[cli];
+        void vscode.workspace.getConfiguration('visor').update(PATH_KEY[cli], p, vscode.ConfigurationTarget.Global);
+      },
+    },
     confirmBypass: async () => {
       const yes = 'Executar sem restrições';
       const pick = await vscode.window.showWarningMessage(
@@ -36,12 +85,14 @@ export function activate(context: vscode.ExtensionContext): void {
       return pick === yes;
     },
     listAgents: listProjectAgents,
-    listClis: () => {
-      const cfg = parseSettings((key) => vscode.workspace.getConfiguration('visor').get(key));
+    listClis: async () => {
+      await Promise.all([ensureCli('claude', false), ensureCli('codex', false)]);
+      const cfg = readSettings();
       return detectClis(execText, { claude: cfg.claudePath, codex: cfg.codexPath });
     },
-    capabilities: (cwd) => {
-      const cfg = parseSettings((key) => vscode.workspace.getConfiguration('visor').get(key));
+    capabilities: async (cwd) => {
+      await ensureCli('claude', false);
+      const cfg = readSettings();
       // Só até o `init` (skills, comandos, modelo padrão): o processo é encerrado assim que o emite; sem sessão gravada e sem hooks.
       return readCapabilities({ command: cfg.claudePath, args: CAPABILITIES_ARGS, cwd });
     },

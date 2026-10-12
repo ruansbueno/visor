@@ -1282,3 +1282,54 @@ describe('RunController: Codex e opções editáveis', () => {
     expect(t.notices().at(-1)!.text).toContain('algo no stderr');
   });
 });
+
+describe('configuração inicial dos CLIs', () => {
+  const MISSING: CliCheck = { state: 'not_installed', message: 'sem cli' };
+
+  it('recheckCli sem cli verifica os dois, mas não incomoda com Codex ausente', async () => {
+    const detect = vi.fn(async (_c: string, cli?: string) => (cli === 'codex' ? MISSING : OK));
+    const { c, posted } = setup({ detect });
+    await c.handle({ type: 'recheckCli' });
+    const checks = posted.filter((m) => m.type === 'cli') as any[];
+    expect(checks.map((m) => m.cli)).toEqual(['claude']);
+  });
+
+  it('recheckCli com cli posta sempre, inclusive ausente', async () => {
+    const { c, posted } = setup({ detect: async () => MISSING });
+    await c.handle({ type: 'recheckCli', cli: 'codex' });
+    expect(posted).toContainEqual({ type: 'cli', check: MISSING, cli: 'codex' });
+  });
+
+  it('installCli e loginCli delegam ao terminal', async () => {
+    const setupDeps = { install: vi.fn(), login: vi.fn(), pickPath: vi.fn(), savePath: vi.fn() };
+    const { c } = setup({ setup: setupDeps } as any);
+    await c.handle({ type: 'installCli', cli: 'claude' });
+    await c.handle({ type: 'loginCli', cli: 'codex' });
+    expect(setupDeps.install).toHaveBeenCalledWith('claude');
+    expect(setupDeps.login).toHaveBeenCalledWith('codex', 'codex');
+  });
+
+  it('pickCliPath grava o caminho só se o executável responde', async () => {
+    const setupDeps = { install: vi.fn(), login: vi.fn(), pickPath: vi.fn(async () => '/x/claude'), savePath: vi.fn() };
+    const { c, posted } = setup({ setup: setupDeps, detect: async () => OK } as any);
+    await c.handle({ type: 'pickCliPath', cli: 'claude' });
+    expect(setupDeps.savePath).toHaveBeenCalledWith('claude', '/x/claude');
+    expect(posted).toContainEqual({ type: 'cli', check: OK, cli: 'claude' });
+  });
+
+  it('pickCliPath com arquivo que não responde avisa e não grava', async () => {
+    const setupDeps = { install: vi.fn(), login: vi.fn(), pickPath: vi.fn(async () => '/x/lixo'), savePath: vi.fn() };
+    const { c, notices } = setup({ setup: setupDeps, detect: async () => MISSING } as any);
+    await c.handle({ type: 'pickCliPath', cli: 'claude' });
+    expect(setupDeps.savePath).not.toHaveBeenCalled();
+    expect(notices()[0]?.level).toBe('error');
+  });
+
+  it('pickCliPath cancelado não faz nada', async () => {
+    const setupDeps = { install: vi.fn(), login: vi.fn(), pickPath: vi.fn(async () => undefined), savePath: vi.fn() };
+    const { c, posted } = setup({ setup: setupDeps } as any);
+    await c.handle({ type: 'pickCliPath', cli: 'claude' });
+    expect(setupDeps.savePath).not.toHaveBeenCalled();
+    expect(posted.filter((m) => m.type === 'cli')).toEqual([]);
+  });
+});

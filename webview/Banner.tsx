@@ -1,6 +1,9 @@
 import type { CliCheck } from '../src/cli/detect';
 import type { CliId } from '../src/core/options';
+import type { WebviewMessage } from '../src/protocol';
 import type { Notice } from './state';
+
+type SetupAction = Extract<WebviewMessage, { type: 'recheckCli' | 'installCli' | 'loginCli' | 'pickCliPath' }>;
 
 export function Banner(props: {
   checks: Partial<Record<CliId, CliCheck>>;
@@ -8,9 +11,10 @@ export function Banner(props: {
   authDismissed: boolean;
   onDismiss(id: number): void;
   onDismissAuth(): void;
+  onSetup(action: SetupAction): void;
   inert?: boolean;
 }) {
-  const { checks, notices, authDismissed, onDismiss, onDismissAuth, inert } = props;
+  const { checks, notices, authDismissed, onDismiss, onDismissAuth, onSetup, inert } = props;
   const entries = (Object.keys(checks) as CliId[]).map((id) => [id, checks[id]!] as const);
   const oks = entries.filter((e): e is readonly [CliId, Extract<CliCheck, { state: 'ok' }>] => e[1].state === 'ok');
   const problems = entries.filter(([, c]) => c.state !== 'ok');
@@ -26,7 +30,19 @@ export function Banner(props: {
         </div>
       )}
       {problems.map(([id, c]) => c.state !== 'ok' && (
-        <div key={id} className={`banner ${c.state === 'unknown' ? 'warn' : 'error'}`} role="alert">{c.message}</div>
+        <div key={id} className={`banner ${c.state === 'unknown' ? 'warn' : 'error'}`} role="alert">
+          <span>{c.message}</span>
+          <span className="setup-actions">
+            {c.state === 'not_installed' && (
+              <>
+                <button onClick={() => onSetup({ type: 'installCli', cli: id })}>Instalar</button>
+                <button onClick={() => onSetup({ type: 'pickCliPath', cli: id })}>Escolher caminho…</button>
+              </>
+            )}
+            {c.state === 'not_authenticated' && <button onClick={() => onSetup({ type: 'loginCli', cli: id })}>Fazer login</button>}
+            <button onClick={() => onSetup({ type: 'recheckCli', cli: id })}>Verificar de novo</button>
+          </span>
+        </div>
       ))}
       {notices.map((n) => (
         <div key={n.id} className={`banner ${n.level}`} role={n.level === 'error' ? 'alert' : 'status'}>

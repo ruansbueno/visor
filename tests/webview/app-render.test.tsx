@@ -1191,3 +1191,37 @@ it('Novo agente não oferece chats do Codex (não há subagentes lá)', async ()
   expect(posted).toContainEqual({ type: 'spawn', agentType: 'reader', task: 'tarefa', runId: 's' });
   await unmount(root);
 });
+
+// ---------- configuração inicial dos CLIs ----------
+it('ao abrir, pede ao host para verificar os CLIs', async () => {
+  const root = await mount();
+  expect(posted).toContainEqual({ type: 'recheckCli' });
+  await unmount(root);
+});
+
+it('CLI não instalado: o aviso oferece instalar, escolher o caminho e verificar de novo', async () => {
+  const root = await mount();
+  await send({ type: 'cli', check: { state: 'not_installed', message: 'Não encontrei o CLI "claude".' } });
+  const banner = document.querySelector('.banner.error')!;
+  expect(banner.textContent).toContain('Não encontrei o CLI');
+  posted.length = 0;
+  await click(btn('Instalar')!);
+  await click(btn('Escolher caminho…')!);
+  await click(btn('Verificar de novo')!);
+  expect(posted).toEqual([
+    { type: 'installCli', cli: 'claude' },
+    { type: 'pickCliPath', cli: 'claude' },
+    { type: 'recheckCli', cli: 'claude' },
+  ]);
+  await unmount(root);
+});
+
+it('CLI sem login: o aviso oferece abrir o login no terminal (do CLI certo)', async () => {
+  const root = await mount();
+  await send({ type: 'cli', cli: 'codex', check: { state: 'not_authenticated', version: '0.1.0', message: 'Rode codex login.' } });
+  posted.length = 0;
+  expect(btn('Instalar')).toBeUndefined();
+  await click(btn('Fazer login')!);
+  expect(posted).toEqual([{ type: 'loginCli', cli: 'codex' }]);
+  await unmount(root);
+});

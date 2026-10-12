@@ -136,6 +136,17 @@ describe('parseWebviewMessage', () => {
     expect(parseWebviewMessage({ type: 'listCapabilities' })).toEqual({ type: 'listCapabilities' });
   });
 
+  it('mensagens da configuração inicial dos CLIs', () => {
+    expect(parseWebviewMessage({ type: 'recheckCli' })).toEqual({ type: 'recheckCli' });
+    expect(parseWebviewMessage({ type: 'recheckCli', cli: 'codex' })).toEqual({ type: 'recheckCli', cli: 'codex' });
+    expect(parseWebviewMessage({ type: 'recheckCli', cli: 'x' })).toBeNull();
+    for (const type of ['installCli', 'loginCli', 'pickCliPath']) {
+      expect(parseWebviewMessage({ type, cli: 'claude' })).toEqual({ type, cli: 'claude' });
+      expect(parseWebviewMessage({ type })).toBeNull();
+      expect(parseWebviewMessage({ type, cli: 'bash' })).toBeNull();
+    }
+  });
+
   it('anexo com separadores de linha unicode ou marcas de direção no caminho é rejeitado', () => {
     for (const bad of ['/a\u2028b', '/a\u2029b', '/a\u0085b', '/a\u202Eb', '/a\u2066b']) {
       expect(parseWebviewMessage({ type: 'send', nodeId: 'r:root', text: 'x', attachments: [bad] })).toBeNull();

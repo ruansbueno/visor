@@ -31,6 +31,7 @@ export function App() {
     const onMessage = (e: MessageEvent<HostMessage>) => dispatch(e.data);
     window.addEventListener('message', onMessage);
     send({ type: 'ready' });
+    send({ type: 'recheckCli' }); // configuração inicial: avisa já se o CLI não foi encontrado ou não tem login
     send({ type: 'listClis' }); // a barra de baixo mostra o seletor de CLI se houver mais de uma instalada
     return () => window.removeEventListener('message', onMessage);
   }, []);
@@ -106,6 +107,7 @@ export function App() {
         authDismissed={state.authDismissed}
         onDismiss={(id) => dispatch({ type: 'dismiss', id })}
         onDismissAuth={() => send({ type: 'dismissAuth' })}
+        onSetup={send}
       />
       <div
         className="canvas"
