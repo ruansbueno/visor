@@ -34,6 +34,21 @@ export interface ProcessRun {
 
 const STDERR_TAIL_BYTES = 4096;
 
+/**
+ * Ambiente do filho. Para o Claude, imita o que a extensão oficial do VS Code faz: sem CLAUDE_CODE_ENTRYPOINT o
+ * `-p` marca a sessão como "sdk-cli" (não interativa); com ele a sessão aparece como a do VS Code. Também remove
+ * as variáveis que marcam "sou um filho de outra sessão do Claude Code" (se o VS Code foi aberto de dentro de uma).
+ */
+function childEnv(opts: ProcessRunOptions): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, ...opts.env };
+  if (opts.adapter !== 'codex') {
+    env.CLAUDE_CODE_ENTRYPOINT = 'claude-vscode';
+    delete env.CLAUDECODE;
+    delete env.CLAUDE_CODE_CHILD_SESSION;
+  }
+  return env;
+}
+
 export function startProcessRun(
   runId: string,
   opts: ProcessRunOptions,
@@ -54,7 +69,7 @@ export function startProcessRun(
   // Em Unix o filho vira líder de grupo, para podermos matar a árvore inteira.
   const child = spawn(opts.command, opts.args, {
     cwd: opts.cwd,
-    env: { ...process.env, ...opts.env },
+    env: childEnv(opts),
     detached: !isWin,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

@@ -27,6 +27,26 @@ const happy = [
 ].join('\n') + '\n';
 
 describe('startProcessRun', () => {
+  it('o Claude roda como a extensão do VS Code (não como sdk-cli) e sem marcas de sessão filha; o Codex não é alterado', async () => {
+    const dump = path.join(tmp(), 'env.json');
+    const script = path.join(tmp(), 'dump.mjs');
+    writeFileSync(script, `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(dump)}, JSON.stringify({ e: process.env.CLAUDE_CODE_ENTRYPOINT ?? null, c: process.env.CLAUDECODE ?? null, k: process.env.CLAUDE_CODE_CHILD_SESSION ?? null }));`);
+    const saved = { ...process.env };
+    process.env.CLAUDECODE = '1';
+    process.env.CLAUDE_CODE_CHILD_SESSION = '1';
+    process.env.CLAUDE_CODE_ENTRYPOINT = 'cli';
+    try {
+      await startProcessRun('r1', { command: process.execPath, args: [script], cwd: process.cwd() }, () => {}).done;
+      expect(JSON.parse(readFileSync(dump, 'utf8'))).toEqual({ e: 'claude-vscode', c: null, k: null });
+      await startProcessRun('r2', { command: process.execPath, args: [script], cwd: process.cwd(), adapter: 'codex' }, () => {}).done;
+      expect(JSON.parse(readFileSync(dump, 'utf8'))).toEqual({ e: 'cli', c: '1', k: '1' });
+    } finally {
+      for (const k of ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_ENTRYPOINT']) {
+        if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
+      }
+    }
+  });
+
   it('lê o stdout por linha e termina em done', async () => {
     const f = path.join(tmp(), 'happy.ndjson');
     writeFileSync(f, happy);
