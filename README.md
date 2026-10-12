@@ -1,62 +1,85 @@
 # Visor - for AI devs
 
-Veja o trabalho dos seus agentes de código como um **canvas**: cada conversa é um cartão, cada subagente um node ligado a ela, com o estado ao vivo (executando, aguardando resposta, concluído, erro).
+See your coding agents' work as a **canvas**: each conversation is a card, each subagent a node linked to it, with live status (running, waiting for your answer, done, error).
 
-O Visor é um **wrapper visual sobre as CLIs que você já tem instaladas**. Ele não é um cliente próprio, não tem tela de login e não guarda nem lê credenciais.
+Visor is a **visual wrapper around the CLIs you already have installed**. It is not its own client, has no login screen, and never reads or stores credentials.
 
-## O que faz
+## Features
 
-- **Chats em paralelo** no mesmo canvas, com campo de envio em cada cartão, perguntas do agente respondidas ali mesmo e retomada da conversa.
-- **Claude Code e Codex**: escolha a CLI, o modelo, o esforço e as permissões (sandbox, no Codex) antes de começar e a cada mensagem. A lista de modelos do Codex vem do próprio CLI.
-- **Subagentes do Claude Code** aparecem como nodes; dá para criar um novo sob um chat.
-- **Anexos e `/`**: anexe arquivos e use skills e comandos que o próprio Claude Code informa.
-- Clique num node para ver as chamadas de ferramenta e as mensagens, como na aba do Claude Code.
-- Ícone na barra lateral: ao abri-lo, o canvas aparece no editor.
+- **Parallel chats** on the same canvas, with a message box on every card, agent questions answered in place, and conversation resume.
+- **Claude Code and Codex**: pick the CLI, model, effort and permissions (sandbox, on Codex) before you start and on every message. The Codex model list comes from the CLI itself.
+- **Claude Code subagents** show up as nodes; you can spawn a new one under a chat.
+- **Attachments and `/`**: attach files and use the skills and commands Claude Code reports.
+- Click a node to see its tool calls and messages, like in the Claude Code tab.
+- Activity bar icon: opening it shows the canvas in the editor.
 
-## Requisitos
+## Install
 
-- VS Code 1.90 ou superior.
-- Pelo menos uma CLI instalada **e com login feito por você**:
+Visor is not on the Marketplace yet. Install it from GitHub:
+
+1. Open the [latest release](https://github.com/ruansbueno/visor/releases/latest) and download the `visor-for-ai-devs-*.vsix` file.
+2. In VS Code, open the Extensions view (`Cmd/Ctrl+Shift+X`), click the `…` menu at the top right, choose **Install from VSIX…** and select the file.
+   Or from a terminal: `code --install-extension visor-for-ai-devs-0.1.0.vsix`
+3. Click the Visor icon (a circle of dots) in the activity bar, or run **Visor: Open agents canvas** from the Command Palette.
+
+Make sure at least one CLI below is installed **and that you have logged in to it yourself** (run `claude` or `codex` once in a terminal).
+
+### Build from source
+
+```bash
+git clone https://github.com/ruansbueno/visor.git
+cd visor
+npm install
+npm run build
+npx @vscode/vsce package --no-dependencies   # produces the .vsix
+```
+
+## Requirements
+
+- VS Code 1.90 or later.
+- At least one CLI, installed and logged in by you:
   - [Claude Code](https://docs.claude.com/en/docs/claude-code) (`claude`)
   - [Codex](https://github.com/openai/codex) (`codex`)
-- Testado com Claude Code 2.1.287 e Codex 0.157.1. Outras versões podem funcionar, mas não foram verificadas.
-- Testado só no macOS. Windows e Linux ainda não foram verificados.
+- Tested with Claude Code 2.1.287 and Codex 0.157.1. Other versions may work but were not verified.
+- Tested on macOS only. Windows and Linux are not verified yet.
 
-## Declaração de conformidade
+## Compliance statement
 
-- Usa **a sua conta e a sua instalação** das CLIs; você instala e faz login pelo terminal.
-- Nunca lê tokens, credenciais, Keychain ou os históricos que as CLIs guardam no seu computador.
-- Não oferece login, não faz proxy nem revende acesso: apenas executa o comando da CLI e mostra a saída.
-- Anexos só vêm do seletor de arquivos, e pastas sensíveis (como `~/.ssh`, `~/.aws`, `~/.claude`) são bloqueadas.
-- Modos sem restrição (`bypassPermissions` no Claude, `danger-full-access` no Codex) sempre pedem confirmação.
-- Funciona só em workspaces confiáveis.
+- Uses **your own account and your own installation** of the CLIs; you install them and log in from the terminal.
+- Never reads tokens, credentials, the Keychain, or the history files the CLIs keep on your machine.
+- Offers no login, does no proxying and resells no access: it just runs the CLI command and shows its output.
+- Attachments only come from the file picker, and sensitive folders (such as `~/.ssh`, `~/.aws`, `~/.claude`) are blocked.
+- Unrestricted modes (`bypassPermissions` on Claude, `danger-full-access` on Codex) always ask for confirmation.
+- Works only in trusted workspaces.
 
-O Visor é um projeto independente e **não é afiliado nem endossado pela Anthropic ou pela OpenAI**. Cabe a você respeitar os termos de uso de cada CLI.
+Visor is an independent project and is **not affiliated with or endorsed by Anthropic or OpenAI**. You are responsible for following each CLI's terms of use.
 
-## Configurações
+## Settings
 
-| Chave | Para quê |
+| Key | Purpose |
 | --- | --- |
-| `visor.claudePath` / `visor.codexPath` | Caminho dos executáveis, se não estiverem no PATH. |
-| `visor.permissionMode` / `visor.allowedTools` | Permissões padrão do Claude Code (modo headless, sem aprovação interativa). |
-| `visor.codexSandbox` | Sandbox padrão do Codex (`read-only`, `workspace-write`, `danger-full-access`). |
-| `visor.parallelWarningThreshold` | A partir de quantos chats simultâneos mostrar um aviso. |
+| `visor.claudePath` / `visor.codexPath` | Executable paths, if they are not on your PATH. |
+| `visor.permissionMode` / `visor.allowedTools` | Default Claude Code permissions (headless mode, no interactive approval). |
+| `visor.codexSandbox` | Default Codex sandbox (`read-only`, `workspace-write`, `danger-full-access`). |
+| `visor.parallelWarningThreshold` | Number of simultaneous chats from which a warning is shown. |
 
-## Comandos
+## Commands
 
-- **Visor: Abrir canvas de agentes**
-- **Visor: Cancelar todas as execuções**
+- **Visor: Abrir canvas de agentes** (open the canvas)
+- **Visor: Cancelar todas as execuções** (cancel all runs)
 
-## Desenvolvimento
+The UI is currently in Portuguese.
+
+## Development
 
 ```bash
 npm install
 npm test          # vitest
-npm run build     # dist/extension.cjs e dist/webview.*
+npm run build     # dist/extension.cjs and dist/webview.*
 ```
 
-Abra a pasta no VS Code e pressione F5 (ou `code --extensionDevelopmentPath=. <pasta>`). A especificação está em `spec-harness-multiagentes-v0.4.md`.
+Open the folder in VS Code and press F5 (or `code --extensionDevelopmentPath=. <folder>`). The specification (in Portuguese) is in `spec-harness-multiagentes-v0.4.md`.
 
-## Licença
+## License
 
 [MIT](LICENSE)
