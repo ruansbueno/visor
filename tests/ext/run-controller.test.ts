@@ -1298,3 +1298,39 @@ describe('configuração inicial dos CLIs', () => {
     expect(posted.filter((m) => m.type === 'cli')).toEqual([]);
   });
 });
+
+describe('CLI sem login', () => {
+  const LOGGED_OUT: CliCheck = { state: 'not_authenticated', version: '1', message: 'login' };
+
+  it('avisa que a mensagem não foi enviada (chat novo e retomada) em vez de descartar em silêncio', async () => {
+    let check: CliCheck = OK;
+    const t = setup({ detect: async () => check });
+    const first = (await startChat(t)).done;
+    t.runs.at(-1)!.emit(init('r1'));
+    t.runs.at(-1)!.finish();
+    await first;
+    check = LOGGED_OUT;
+    await t.c.handle({ type: 'recheckCli', cli: 'claude' }); // o banner passa a mostrar o problema
+    const before = t.notices().length;
+    await t.c.handle({ type: 'send', nodeId: 'r1:root', text: 'oi' });
+    expect(t.notices().slice(before).some((n) => n.level === 'error' && /não enviada/.test(n.text))).toBe(true);
+    expect(t.startRun).toHaveBeenCalledTimes(1);
+    await t.c.handle({ type: 'start', prompt: 'novo' });
+    expect(t.notices().at(-1)!.text).toMatch(/não enviada/);
+    expect(t.startRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('"Verificar de novo" responde com um aviso, e voltar ao painel reconfere só o que estava com problema', async () => {
+    let check: CliCheck = LOGGED_OUT;
+    const detect = vi.fn(async () => check);
+    const t = setup({ detect });
+    await t.c.handle({ type: 'recheckCli', cli: 'claude' });
+    expect(t.notices().at(-1)!.text).toMatch(/continua/);
+    check = OK;
+    await t.c.refreshProblems();
+    expect((t.posted.filter((m) => m.type === 'cli').at(-1) as any).check.state).toBe('ok');
+    const calls = detect.mock.calls.length;
+    await t.c.refreshProblems(); // já está ok: não executa o CLI de novo
+    expect(detect.mock.calls.length).toBe(calls);
+  });
+});

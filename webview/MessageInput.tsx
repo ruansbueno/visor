@@ -5,7 +5,8 @@ import { InputContext } from './input-context';
 import { handleSendKey } from './keys';
 import { SendButton } from './SendButton';
 
-const SLASH = /^\/([\w.:-]*)$/;
+// "/comando" logo antes do cursor, no começo do texto ou depois de um espaço/quebra de linha.
+const SLASH = /(^|\s)\/([\w.:-]*)$/;
 const MAX_ITEMS = 60;
 
 export function filterCommands(commands: SlashItem[], query: string): SlashItem[] {
@@ -53,6 +54,7 @@ export function MessageInput(props: {
   const [files, setFiles] = useState<AttachedFile[]>([]);
   const [index, setIndex] = useState(0);
   const [dismissed, setDismissed] = useState(false);
+  const [caret, setCaret] = useState(0);
 
   // Arquivos escolhidos no seletor para ESTE campo.
   const { picked, consumePicked } = ctx;
@@ -63,7 +65,8 @@ export function MessageInput(props: {
     }
   }, [picked, id, consumePicked]);
 
-  const query = allowSlash ? SLASH.exec(text)?.[1] : undefined;
+  const slashMatch = allowSlash ? SLASH.exec(text.slice(0, caret)) : null;
+  const query = slashMatch?.[2];
   const slashActive = query !== undefined;
   const { requestCommands } = ctx;
   useEffect(() => {
@@ -116,8 +119,6 @@ export function MessageInput(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [maxHeight]);
 
-  // O botão só faz sentido com o campo vazio ou já começando por uma barra (comando).
-  const slashUsable = text === '' || SLASH.test(text);
   const hasContent = text.trim().length > 0 || files.length > 0;
   const canSubmit = !disabled && !submitDisabled && hasContent;
   const submit = () => {
@@ -127,8 +128,18 @@ export function MessageInput(props: {
     setFiles([]);
   };
 
+  // Depois de mudar o texto por código, o cursor volta para onde a pessoa estava escrevendo.
+  const placeCaret = (pos: number) => {
+    setCaret(pos);
+    requestAnimationFrame(() => ref.current?.setSelectionRange(pos, pos));
+  };
+  const syncCaret = (el: HTMLTextAreaElement) => setCaret(el.selectionStart ?? el.value.length);
+
   const choose = (item: SlashItem) => {
-    setText(`/${item.name} `);
+    const start = caret - (slashMatch?.[2]?.length ?? 0) - 1; // posição da barra
+    const insert = `/${item.name} `;
+    setText(text.slice(0, start) + insert + text.slice(caret));
+    placeCaret(start + insert.length);
     setDismissed(false);
     setIndex(0);
     ref.current?.focus();
@@ -178,9 +189,11 @@ export function MessageInput(props: {
           disabled={disabled}
           onChange={(e) => {
             setText(e.target.value);
+            syncCaret(e.target);
             setDismissed(false);
             setIndex(0);
           }}
+          onSelect={(e) => syncCaret(e.currentTarget)}
           onKeyDown={(e) => {
             if (open && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
               if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -215,10 +228,16 @@ export function MessageInput(props: {
               <button
                 className="icon-btn slash-btn"
                 aria-label="Skills e comandos"
-                title={slashUsable ? 'Skills e comandos' : 'Skills e comandos só no começo de uma mensagem (digite / antes do texto)'}
-                disabled={disabled || !slashUsable}
+                title="Skills e comandos"
+                disabled={disabled}
                 onClick={() => {
-                  if (!text) setText('/');
+                  if (!slashActive) {
+                    const el = ref.current;
+                    const pos = el?.selectionStart ?? text.length;
+                    const lead = pos > 0 && !/\s/.test(text[pos - 1]!) ? ' ' : '';
+                    setText(text.slice(0, pos) + lead + '/' + text.slice(pos));
+                    placeCaret(pos + lead.length + 1);
+                  }
                   setDismissed(false); // reabre o menu se tinha sido dispensado com Esc
                   setIndex(0);
                   ref.current?.focus();

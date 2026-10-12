@@ -8,6 +8,7 @@ import { ChatContext, type ChatCtx } from './chat-context';
 import { toFlow } from './graph';
 import { toMoves, type Move } from './moves';
 import { stabilizeNodes } from './stable';
+import { useIsDark } from './theme';
 
 const nodeTypes = { chat: ChatCard, agent: AgentNodeCard };
 const FIT = { padding: 0.3, maxZoom: 1 };
@@ -57,7 +58,7 @@ export function GraphView(props: {
       ),
     [flow, now, logs, selectedId],
   );
-  const dark = !document.body.classList.contains('vscode-light');
+  const dark = useIsDark();
   const userMoved = useRef(false);
 
   const onNodesChange = (changes: NodeChange[]) => {

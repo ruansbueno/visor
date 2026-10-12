@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.6
+
+- O menu `/` (skills e comandos) abre em qualquer ponto da mensagem, não só no início.
+- Login pelo Visor como nas extensões oficiais: "Fazer login" abre o navegador (Claude.ai / ChatGPT) e o Visor reconfere o CLI sozinho ao terminar ou ao voltar ao painel.
+- Quando o CLI está sem login ou não instalado, o card avisa "Mensagem não enviada" em vez de ignorar em silêncio; "Verificar de novo" agora responde.
+- O canvas acompanha a troca de tema (claro/escuro) sem reabrir o painel, e os textos de status têm mais contraste no tema claro.
+
 ## 0.1.5
 
 Corrige o travamento do Visor ao enviar muitas mensagens ao mesmo card: a conversa longa não é mais redesenhada por inteiro a cada atualização.

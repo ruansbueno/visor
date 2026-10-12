@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { CAPABILITIES_ARGS, readCapabilities } from '../cli/capabilities';
 import { detectClis } from '../cli/clis';
 import { detectClaude, detectCodex, execText } from '../cli/detect';
-import { findCli, installCommand, loginCommand } from '../cli/locate';
+import { findCli, installCommand } from '../cli/locate';
 import type { CliId } from '../core/options';
 import { startProcessRun } from '../cli/process-run';
 import { describeRejected, parseWebviewMessage, type HostMessage } from '../protocol';
@@ -61,7 +61,22 @@ export function activate(context: vscode.ExtensionContext): void {
     },
     setup: {
       install: (cli) => openTerminal(`Visor: instalar ${cli === 'codex' ? 'Codex' : 'Claude Code'}`, installCommand(cli, process.platform)),
-      login: (cli, command) => openTerminal(`Visor: login ${cli === 'codex' ? 'Codex' : 'Claude Code'}`, loginCommand(cli, command, process.platform)),
+      login: (cli, command) => {
+        // Como nas extensões oficiais: login com a conta (Claude.ai / ChatGPT); o CLI abre o navegador sozinho
+        // (e mostra o link no terminal se não conseguir). O terminal roda só o login e fecha ao terminar.
+        const t = vscode.window.createTerminal({
+          name: `Visor: login ${cli === 'codex' ? 'Codex' : 'Claude Code'}`,
+          shellPath: command,
+          shellArgs: cli === 'codex' ? ['login'] : ['auth', 'login', '--claudeai'],
+        });
+        t.show();
+        const sub = vscode.window.onDidCloseTerminal((closed) => {
+          if (closed !== t) return;
+          sub.dispose();
+          controller.refreshProblems().catch((err) => log.appendLine(String(err)));
+        });
+        context.subscriptions.push(sub);
+      },
       pickPath: async (cli) => {
         const picked = await vscode.window.showOpenDialog({
           canSelectMany: false,
@@ -134,6 +149,9 @@ export function activate(context: vscode.ExtensionContext): void {
       // A Webview já limpou o campo: sem este aviso a pessoa perderia a mensagem sem saber.
       const why = describeRejected(raw);
       if (why) void web.postMessage({ type: 'notice', level: 'error', text: why } satisfies HostMessage);
+    });
+    panel.onDidChangeViewState((e) => {
+      if (e.webviewPanel.active) controller.refreshProblems().catch((err) => log.appendLine(String(err)));
     });
     panel.onDidDispose(() => {
       panel = undefined; // as conversas continuam; reabrir o canvas reenvia o snapshot de todas

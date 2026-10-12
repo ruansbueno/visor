@@ -355,6 +355,26 @@ export class RunController {
     return check;
   }
 
+  /** CLI ausente ou sem login: nada é enviado, e a pessoa precisa saber (o banner do topo passa despercebido). */
+  private blockedByCli(check: CliCheck, cli: CliId, chat?: Chat): boolean {
+    if (check.state !== 'not_installed' && check.state !== 'not_authenticated') return false;
+    const name = cli === 'codex' ? 'Codex' : 'Claude Code';
+    const why = check.state === 'not_installed' ? `o ${name} não foi encontrado` : `o ${name} não está autenticado`;
+    this.notice('error', `Mensagem não enviada: ${why}. Use os botões do aviso no topo (Fazer login / Verificar de novo) e envie de novo.`, chat);
+    return true;
+  }
+
+  /** Reconfere só os CLIs que estavam com problema (ex.: a pessoa fez login no terminal e voltou ao painel). */
+  async refreshProblems(): Promise<void> {
+    const bad = [...this.lastChecks].filter(([, c]) => c.state !== 'ok').map(([cli]) => cli);
+    await Promise.all(
+      bad.map(async (cli) => {
+        const check = await this.checkCli(cli);
+        this.deps.post({ type: 'cli', check, cli });
+      }),
+    );
+  }
+
   /** Sem `only`, verifica os dois ao abrir o canvas; um CLI ausente que a pessoa nunca pediu fica quieto. */
   private async recheckCli(only?: CliId): Promise<void> {
     const ids: CliId[] = only ? [only] : ['claude', 'codex'];
@@ -366,6 +386,11 @@ export class RunController {
           return;
         }
         this.deps.post({ type: 'cli', check, cli });
+        if (only) {
+          const name = cli === 'codex' ? 'Codex' : 'Claude Code';
+          if (check.state === 'ok') this.notice('info', `${name}: tudo certo, pode enviar mensagens.`);
+          else this.notice('warn', `${name}: o problema continua (${check.state === 'not_installed' ? 'não encontrado' : 'sem login'}).`);
+        }
       }),
     );
   }
@@ -523,7 +548,7 @@ export class RunController {
       const check = await this.deps.detect(cli === 'codex' ? settings.codexPath : settings.claudePath, cli);
       this.lastChecks.set(cli, check);
       this.deps.post({ type: 'cli', check, cli });
-      if (check.state === 'not_installed' || check.state === 'not_authenticated') return;
+      if (this.blockedByCli(check, cli)) return;
 
       if (token.cancelled) {
         this.notice('info', 'Execução cancelada.');
@@ -612,7 +637,7 @@ export class RunController {
           const check = await this.deps.detect(cli === 'codex' ? settings.codexPath : settings.claudePath, cli);
           this.lastChecks.set(cli, check);
           this.deps.post({ type: 'cli', check, cli });
-          if (check.state === 'not_installed' || check.state === 'not_authenticated') return;
+          if (this.blockedByCli(check, cli, chat)) return;
         }
         if (chat.cancelRequested) {
           this.notice('info', 'Execução cancelada.', chat);

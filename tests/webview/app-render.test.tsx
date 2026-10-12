@@ -712,12 +712,10 @@ it('digitar "/" no começo abre o menu (e pede as capacidades uma vez); filtra a
   await unmount(root);
 });
 
-it('o menu "/" não abre com barra no meio do texto nem depois de um espaço', async () => {
+it('o menu "/" fecha depois que o comando é seguido de espaço', async () => {
   const root = await mount();
   await send({ type: 'capabilities', commands: cmds as any });
   const ta = document.querySelector('.toolbar textarea')!;
-  await typeInto(ta, 'olhe o /ping');
-  expect(slash()).toBeNull();
   await typeInto(ta, '/ping com argumentos');
   expect(slash()).toBeNull();
   await unmount(root);
@@ -1015,21 +1013,32 @@ it('ao fechar Novo agente/Novo chat o foco volta ao botão que abriu o diálogo'
   await unmount(root);
 });
 
-it('o botão "/": abre/reabre o menu em campo vazio ou com uma barra; fica desabilitado quando há texto comum', async () => {
+it('o botão "/": abre/reabre o menu e insere a barra depois do texto', async () => {
   const root = await mount();
   await send({ type: 'capabilities', commands: cmds as any });
   const ta = () => document.querySelector('.toolbar textarea') as HTMLTextAreaElement;
   const slashBtn = () => byLabel('Skills e comandos', document.querySelector('.toolbar')!)!;
   expect(slashBtn().disabled).toBe(false);
   await typeInto(ta(), 'olá, mundo');
-  expect(slashBtn().disabled).toBe(true);
-  expect(slashBtn().getAttribute('title')).toMatch(/começo/);
-  await typeInto(ta(), '/pi');
   expect(slashBtn().disabled).toBe(false);
+  await typeInto(ta(), '/pi');
   await key('Escape', {}, ta());
   expect(slash()).toBeNull();
   await click(slashBtn()); // reabre depois de dispensado
   expect(slash()).not.toBeNull();
+  await unmount(root);
+});
+
+it('o menu "/" abre no meio da mensagem e substitui só o trecho digitado', async () => {
+  const root = await mount();
+  await send({ type: 'capabilities', commands: cmds as any });
+  const ta = () => document.querySelector('.toolbar textarea') as HTMLTextAreaElement;
+  await typeInto(ta(), 'rode antes /pi');
+  expect(slashItems()).toEqual(['/ping']);
+  await key('Enter', {}, ta());
+  expect(ta().value).toBe('rode antes /ping ');
+  await typeInto(ta(), 'http://x/pi');
+  expect(slash()).toBeNull(); // barra no meio de uma palavra não é comando
   await unmount(root);
 });
 
