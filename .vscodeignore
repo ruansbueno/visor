@@ -14,3 +14,5 @@ tsconfig.json
 vitest.config.ts
 package-lock.json
 spec-*.md
+.claude/**
+*.vsix
