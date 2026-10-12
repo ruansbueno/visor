@@ -17,6 +17,7 @@ interface FakeRun {
   emit(e: NormalizedEvent): void;
   finish(r?: ProcessRunResult): void;
   cancel: ReturnType<typeof vi.fn>;
+  respond: ReturnType<typeof vi.fn>;
 }
 
 function setup(over: Partial<ControllerDeps> = {}, settings: Partial<VisorSettings> = {}) {
@@ -26,10 +27,11 @@ function setup(over: Partial<ControllerDeps> = {}, settings: Partial<VisorSettin
   const prefState = { dismissed: false };
   const startRun = vi.fn((runId: string, opts: ProcessRunOptions, on: (e: NormalizedEvent) => void) => {
     const cancel = vi.fn();
+    const respond = vi.fn(() => true);
     let finish: (r: ProcessRunResult) => void = () => {};
     const done = new Promise<ProcessRunResult>((res) => (finish = res));
-    runs.push({ runId, opts, emit: on, finish: (r) => finish(r ?? result()), cancel });
-    return { cancel, done };
+    runs.push({ runId, opts, emit: on, finish: (r) => finish(r ?? result()), cancel, respond });
+    return { cancel, respond, done };
   });
   const deps: ControllerDeps = {
     post: (m) => posted.push(m),
@@ -68,6 +70,8 @@ const sub = (runId: string, id: string): NormalizedEvent => ({ type: 'node_start
 const msg = (runId: string, text: string, node = 'root'): NormalizedEvent => ({ type: 'node_event', runId, nodeId: `${runId}:${node}`, kind: 'message', payload: { role: 'assistant', text }, ts: 5 });
 const finishedWithQuestion = (runId: string, q: Question): NormalizedEvent => ({ type: 'run_finished', runId, status: 'done', question: q, ts: 3 });
 const Q: Question = { text: 'Qual cor?', options: ['Azul'], source: 'marker' };
+/** O prompt do turno do Claude vai pelo stdin (stream-json); o do Codex continua como último argumento. */
+const promptOf = (opts: ProcessRunOptions): string => (opts.input !== undefined ? JSON.parse(opts.input.trim()).message.content : opts.args.at(-1)!);
 
 /** Inicia um chat e devolve `done` (a promessa do turno) sem esperar o término. */
 async function startChat(t: T, prompt = 'x', title?: string) {
@@ -151,7 +155,7 @@ describe('RunController: iniciar chats', () => {
     expect(opts.args).toEqual(expect.arrayContaining(['--permission-mode', 'plan', '--allowedTools', 'Read']));
     const i = opts.args.indexOf('--append-system-prompt');
     expect(opts.args[i + 1]).toContain('visor-question');
-    expect(opts.args.slice(-2)).toEqual(['--', 'olá']);
+    expect(promptOf(opts)).toBe('olá');
     expect(opts.args).not.toContain('--resume');
     t.runs[0]!.finish();
     await p;
@@ -457,7 +461,7 @@ describe('RunController: responder, enviar, novo agente, concluir', () => {
     await t.tick();
     const { opts } = t.runs.at(-1)!;
     expect(opts.args).toEqual(expect.arrayContaining(['--resume', `sess-${id}`, '--append-system-prompt']));
-    expect(opts.args.slice(-2)).toEqual(['--', 'Azul']);
+    expect(promptOf(opts)).toBe('Azul');
     expect(opts.resume).toEqual({ subagents: [], tasks: {} });
     expect(t.view(id).status).toBe('running');
     expect(t.view(id).nodes[0]).toMatchObject({ status: 'running' });
@@ -485,7 +489,7 @@ describe('RunController: responder, enviar, novo agente, concluir', () => {
     const id = await waitingChat(t, (r) => [sub(r, 'a'), { type: 'node_meta', runId: r, nodeId: `${r}:a`, agentId: 'agent-xyz', ts: 2 }]);
     const p = t.c.handle({ type: 'send', nodeId: `${id}:a`, text: 'agora em francês' });
     await t.tick();
-    const prompt = t.runs.at(-1)!.opts.args.at(-1)!;
+    const prompt = promptOf(t.runs.at(-1)!.opts);
     for (const part of ['SendMessage', 'agent-xyz', 'echo', 'agora em francês']) expect(prompt).toContain(part);
     await t.c.handle({ type: 'inspect', nodeId: `${id}:a` });
     expect(t.logs().at(-1)!.events.at(-1)!.payload).toEqual({ role: 'user', text: 'agora em francês' });
@@ -498,7 +502,7 @@ describe('RunController: responder, enviar, novo agente, concluir', () => {
     const id = await waitingChat(t, (r) => [sub(r, 'a')]);
     const p = t.c.handle({ type: 'send', nodeId: `${id}:a`, text: 'oi' });
     await t.tick();
-    const prompt = t.runs.at(-1)!.opts.args.at(-1)!;
+    const prompt = promptOf(t.runs.at(-1)!.opts);
     expect(prompt).toContain('echo');
     expect(prompt).toContain('oi');
     expect(prompt).not.toContain('SendMessage');
@@ -543,8 +547,8 @@ describe('RunController: responder, enviar, novo agente, concluir', () => {
     await t.tick();
     const args = t.runs.at(-1)!.opts.args;
     expect(args).toEqual(expect.arrayContaining(['--resume', `sess-${id}`]));
-    expect(args.at(-1)).toContain('subagent_type "reader"');
-    expect(args.at(-1)).toContain('leia notes.txt');
+    expect(promptOf(t.runs.at(-1)!.opts)).toContain('subagent_type "reader"');
+    expect(promptOf(t.runs.at(-1)!.opts)).toContain('leia notes.txt');
     t.runs.at(-1)!.finish();
     await p;
   });
@@ -555,7 +559,7 @@ describe('RunController: responder, enviar, novo agente, concluir', () => {
     await t.tick();
     const { opts } = t.runs[0]!;
     expect(opts.args).not.toContain('--resume');
-    expect(opts.args.at(-1)).toContain('subagent_type "reader"');
+    expect(promptOf(opts)).toContain('subagent_type "reader"');
     expect(t.view('r1').title).toContain('reader');
     t.runs[0]!.finish();
     await p;
@@ -807,7 +811,7 @@ describe('RunController: cartão do chat ao vivo, nome e posições', () => {
     await t.tick(15);
     const first = chatLogs(t).at(-1)!.events[0]!.payload as any;
     expect(first).toEqual({ role: 'user', text: 'Novo node (reader): leia notes.txt' });
-    expect(t.runs[0]!.opts.args.at(-1)).toContain('subagent_type "reader"'); // o prompt real segue em inglês
+    expect(promptOf(t.runs[0]!.opts)).toContain('subagent_type "reader"'); // o prompt real segue em inglês
     t.runs[0]!.finish();
     await p;
   });
@@ -877,7 +881,7 @@ describe('RunController: opções do chat, anexos, CLIs e capacidades', () => {
     await pick(t, ['/proj/src/a.ts', '/outro/lugar/b.png', '/proj/dir']);
     const p = (await start(t, { prompt: 'analise', attachments: ['/proj/src/a.ts', '/outro/lugar/b.png', '/proj/dir'] })).done;
     const args = t.runs[0]!.opts.args;
-    const prompt = args.at(-1)!;
+    const prompt = promptOf(t.runs[0]!.opts);
     expect(prompt.startsWith('analise')).toBe(true);
     for (const f of ['/proj/src/a.ts', '/outro/lugar/b.png', '/proj/dir']) expect(prompt).toContain(`- ${f}`);
     expect(args).not.toContain('--add-dir'); // nunca libera a pasta inteira (nem para edição)
@@ -906,7 +910,7 @@ describe('RunController: opções do chat, anexos, CLIs e capacidades', () => {
     const t = setup();
     await pick(t, ['/proj/a.txt']);
     const p = (await start(t, { prompt: '   ', attachments: ['/proj/a.txt'] })).done;
-    const prompt = t.runs[0]!.opts.args.at(-1)!;
+    const prompt = promptOf(t.runs[0]!.opts);
     expect(prompt.startsWith('Files attached')).toBe(true);
     expect(prompt).toContain('- /proj/a.txt');
     expect(t.view('r1').title).toBe('a.txt');
@@ -952,8 +956,8 @@ describe('RunController: opções do chat, anexos, CLIs e capacidades', () => {
     const p = t.c.handle({ type: 'send', nodeId: `${id}:root`, text: 'olhe isto', attachments: ['/fora/doc.pdf'] });
     await t.tick();
     const args = t.runs.at(-1)!.opts.args;
-    expect(args.at(-1)).toContain('olhe isto');
-    expect(args.at(-1)).toContain('- /fora/doc.pdf');
+    expect(promptOf(t.runs.at(-1)!.opts)).toContain('olhe isto');
+    expect(promptOf(t.runs.at(-1)!.opts)).toContain('- /fora/doc.pdf');
     expect(args).not.toContain('--add-dir');
     expect(args).toEqual(expect.arrayContaining(['--allowedTools', 'Read(//fora/doc.pdf)']));
     await t.c.handle({ type: 'inspect', nodeId: `${id}:root` });
@@ -968,7 +972,7 @@ describe('RunController: opções do chat, anexos, CLIs e capacidades', () => {
     await pick(t, ['/proj/n.txt']);
     const p = t.c.handle({ type: 'send', nodeId: `${id}:a`, text: 'leia', attachments: ['/proj/n.txt'] });
     await t.tick();
-    const prompt = t.runs.at(-1)!.opts.args.at(-1)!;
+    const prompt = promptOf(t.runs.at(-1)!.opts);
     expect(prompt).toContain('SendMessage');
     expect(prompt).toContain('- /proj/n.txt');
     t.runs.at(-1)!.finish();
@@ -1078,6 +1082,7 @@ describe('RunController: Codex e opções editáveis', () => {
     const { opts } = t.runs[0]!;
     expect(opts.command).toBe('/opt/codex');
     expect(opts.adapter).toBe('codex');
+    expect(opts.input).toBeUndefined(); // o Codex continua com prompt posicional e stdin fechado
     expect(opts.args.slice(0, 5)).toEqual(['exec', '--json', '--skip-git-repo-check', '-s', 'workspace-write']);
     const prompt = opts.args.at(-1)!;
     expect(prompt).toContain('visor-question');
@@ -1137,6 +1142,7 @@ describe('RunController: Codex e opções editáveis', () => {
     await t.tick();
     const { opts } = t.runs[1]!;
     expect(opts.adapter).toBe('codex');
+    expect(opts.input).toBeUndefined(); // o Codex continua com prompt posicional e stdin fechado
     expect(opts.args.slice(0, 3)).toEqual(['exec', 'resume', '--json']);
     expect(opts.args).toEqual(expect.arrayContaining(['-c', 'sandbox_mode="workspace-write"', '-m', 'gpt-x']));
     expect(opts.args.slice(-3)).toEqual(['--', 'thread-9', 'segue']); // sem o prefixo da instrução
@@ -1353,5 +1359,126 @@ describe('CLI sem login', () => {
     const calls = detect.mock.calls.length;
     await t.c.refreshProblems(); // já está ok: não executa o CLI de novo
     expect(detect.mock.calls.length).toBe(calls);
+  });
+});
+
+describe('permissões interativas', () => {
+  const ask = (runId: string, requestId: string, suggestions: unknown[] = [{ type: 'addRules', behavior: 'allow', rules: [{ toolName: 'Bash', ruleContent: 'ls' }] }]): NormalizedEvent => ({
+    type: 'permission_request', runId, nodeId: `${runId}:root`, requestId, tool: 'Bash', input: { command: 'ls' }, suggestions, ts: 4,
+  });
+
+  it('o turno do Claude manda a mensagem pelo stdin e usa as flags de permissão', async () => {
+    const t = setup();
+    const { done } = await startChat(t, 'oi');
+    const { opts } = t.runs[0]!;
+    expect(opts.args).toEqual(expect.arrayContaining(['--input-format', 'stream-json', '--permission-prompt-tool=stdio']));
+    expect(opts.args).not.toContain('--');
+    expect(promptOf(opts)).toBe('oi');
+    t.runs[0]!.finish(); await done;
+  });
+
+  it('o pedido aparece no snapshot (sem input nem sugestões) e o status não muda', async () => {
+    const t = setup();
+    const { done } = await startChat(t);
+    t.runs[0]!.emit(init('r1')); t.runs[0]!.emit(ask('r1', 'q1'));
+    await t.tick();
+    const root = t.view('r1').nodes[0]!;
+    expect(root.permissions).toEqual([{ requestId: 'q1', tool: 'Bash', summary: 'ls', hasAlways: true }]);
+    expect(root.status).toBe('running');
+    t.runs[0]!.finish(); await done;
+  });
+
+  it.each([
+    ['allow', { behavior: 'allow', updatedInput: { command: 'ls' } }],
+    ['allow_always', { behavior: 'allow', updatedInput: { command: 'ls' }, updatedPermissions: [{ type: 'addRules', behavior: 'allow', rules: [{ toolName: 'Bash', ruleContent: 'ls' }] }] }],
+    ['deny', { behavior: 'deny', message: 'Negado pelo usuário no Visor.' }],
+  ] as const)('decisão %s é enviada ao processo e o pedido some', async (decision, expected) => {
+    const t = setup();
+    const { done } = await startChat(t);
+    t.runs[0]!.emit(init('r1')); t.runs[0]!.emit(ask('r1', 'q1'));
+    await t.c.handle({ type: 'permission', runId: 'r1', requestId: 'q1', decision });
+    expect(t.runs[0]!.respond).toHaveBeenCalledWith('q1', expected);
+    await t.tick();
+    expect(t.view('r1').nodes[0]!.permissions).toBeUndefined();
+    t.runs[0]!.finish(); await done;
+  });
+
+  it('allow_always sem sugestão age como allow', async () => {
+    const t = setup();
+    const { done } = await startChat(t);
+    t.runs[0]!.emit(init('r1')); t.runs[0]!.emit(ask('r1', 'q1', []));
+    await t.c.handle({ type: 'permission', runId: 'r1', requestId: 'q1', decision: 'allow_always' });
+    expect(t.runs[0]!.respond).toHaveBeenCalledWith('q1', { behavior: 'allow', updatedInput: { command: 'ls' } });
+    t.runs[0]!.finish(); await done;
+  });
+
+  it('dois pedidos: cada decisão vai para o requestId certo', async () => {
+    const t = setup();
+    const { done } = await startChat(t);
+    t.runs[0]!.emit(init('r1')); t.runs[0]!.emit(ask('r1', 'a')); t.runs[0]!.emit(ask('r1', 'b'));
+    await t.c.handle({ type: 'permission', runId: 'r1', requestId: 'b', decision: 'deny' });
+    await t.tick();
+    expect(t.runs[0]!.respond).toHaveBeenCalledWith('b', expect.objectContaining({ behavior: 'deny' }));
+    expect(t.view('r1').nodes[0]!.permissions!.map((p) => p.requestId)).toEqual(['a']);
+    t.runs[0]!.finish(); await done;
+  });
+
+  it('pedido inexistente, repetido ou depois do fim do turno é ignorado com aviso', async () => {
+    const t = setup();
+    const { done } = await startChat(t);
+    t.runs[0]!.emit(init('r1')); t.runs[0]!.emit(ask('r1', 'q1'));
+    await t.c.handle({ type: 'permission', runId: 'r1', requestId: 'nao-existe', decision: 'allow' });
+    await t.c.handle({ type: 'permission', runId: 'r1', requestId: 'q1', decision: 'allow' });
+    await t.c.handle({ type: 'permission', runId: 'r1', requestId: 'q1', decision: 'allow' }); // repetido
+    expect(t.runs[0]!.respond).toHaveBeenCalledTimes(1);
+    t.runs[0]!.finish(); await done;
+    await t.c.handle({ type: 'permission', runId: 'r1', requestId: 'q1', decision: 'allow' }); // turno acabou
+    expect(t.runs[0]!.respond).toHaveBeenCalledTimes(1);
+    expect(t.notices().filter((n) => n.text.includes('permissão')).length).toBeGreaterThanOrEqual(2);
+    await t.c.handle({ type: 'permission', runId: 'nao-existe', requestId: 'q1', decision: 'allow' }); // sem exceção
+  });
+
+  it('se o processo não aceita mais a resposta (respond false), avisa e remove o pedido', async () => {
+    const t = setup();
+    const { done } = await startChat(t);
+    t.runs[0]!.respond.mockReturnValue(false);
+    t.runs[0]!.emit(init('r1')); t.runs[0]!.emit(ask('r1', 'q1'));
+    await t.c.handle({ type: 'permission', runId: 'r1', requestId: 'q1', decision: 'allow' });
+    await t.tick();
+    expect(t.view('r1').nodes[0]!.permissions).toBeUndefined();
+    expect(t.notices().some((n) => n.text.includes('permissão'))).toBe(true);
+    t.runs[0]!.finish(); await done;
+  });
+
+  it('o run_finished do turno não esconde um pedido pendente enquanto o processo está vivo', async () => {
+    const t = setup();
+    const { done } = await startChat(t);
+    t.runs[0]!.emit(init('r1')); t.runs[0]!.emit(ask('r1', 'q1'));
+    t.runs[0]!.emit({ type: 'run_finished', runId: 'r1', status: 'done', ts: 9 });
+    await t.tick();
+    expect(t.view('r1').nodes[0]!.permissions!.map((p) => p.requestId)).toEqual(['q1']);
+    await t.c.handle({ type: 'permission', runId: 'r1', requestId: 'q1', decision: 'allow' });
+    expect(t.runs[0]!.respond).toHaveBeenCalledTimes(1);
+    t.runs[0]!.finish(); await done;
+  });
+
+  it('pedido que chega depois do run_finished (tarefa em segundo plano) aparece no snapshot', async () => {
+    const t = setup();
+    const { done } = await startChat(t);
+    t.runs[0]!.emit(init('r1'));
+    t.runs[0]!.emit({ type: 'run_finished', runId: 'r1', status: 'done', ts: 9 });
+    t.runs[0]!.emit(ask('r1', 'late'));
+    await t.tick();
+    expect(t.view('r1').nodes[0]!.permissions!.map((p) => p.requestId)).toEqual(['late']);
+    t.runs[0]!.finish(); await done;
+  });
+
+  it('quando o processo termina com pedido pendente, o pedido some', async () => {
+    const t = setup();
+    const { done } = await startChat(t);
+    t.runs[0]!.emit(init('r1')); t.runs[0]!.emit(ask('r1', 'q1'));
+    t.runs[0]!.emit({ type: 'run_finished', runId: 'r1', status: 'cancelled', ts: 9 });
+    t.runs[0]!.finish(); await done;
+    expect(t.view('r1').nodes[0]!.permissions).toBeUndefined();
   });
 });

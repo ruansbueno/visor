@@ -82,3 +82,12 @@ it('busy vai para a view do run (padrão false)', () => {
   expect(toRunView(s).busy).toBe(false);
   expect(toRunView(s, true).busy).toBe(true);
 });
+
+it('toRunView expõe os pedidos de permissão do node (sem input nem sugestões)', () => {
+  const s = new RunStore({ runId: 'r1', source: 'panel', cwd: '/p' });
+  s.apply({ type: 'run_started', runId: 'r1', ts: 1 });
+  s.apply({ type: 'permission_request', runId: 'r1', nodeId: 'r1:root', requestId: 'a', tool: 'Bash', input: { command: 'ls' }, suggestions: [], ts: 2 });
+  const node = toRunView(s).nodes[0]!;
+  expect(node.permissions).toEqual([{ requestId: 'a', tool: 'Bash', summary: 'ls', hasAlways: false }]);
+  expect(JSON.stringify(node)).not.toContain('suggestions');
+});

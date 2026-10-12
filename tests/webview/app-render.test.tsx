@@ -1274,3 +1274,94 @@ it('CLI sem login: o aviso oferece abrir o login no terminal (do CLI certo)', as
   expect(posted).toEqual([{ type: 'loginCli', cli: 'codex' }]);
   await unmount(root);
 });
+
+// ---------- permissões ----------
+const asking = (hasAlways = true, extra: Partial<RunView['nodes'][number]> = {}) =>
+  chat('r', 'Permissão', 'running', { permissions: [{ requestId: 'q1', tool: 'Bash', summary: 'rm -rf build', hasAlways }], ...extra }, true);
+
+it('mostra o card de permissão com a ferramenta e o resumo, e os três botões enviam a decisão', async () => {
+  const root = await mount();
+  await send({ type: 'snapshot', runs: [asking()] });
+  const c = card('r').querySelector('.permission-card')!;
+  expect(c).not.toBeNull();
+  expect(c.textContent).toContain('Bash');
+  expect(c.textContent).toContain('rm -rf build');
+  const labels = [...c.querySelectorAll('button')].map((b) => b.textContent);
+  expect(labels).toEqual(['Permitir', 'Permitir sempre', 'Negar']);
+  vi.useFakeTimers();
+  try {
+    for (const [label, decision] of [['Permitir', 'allow'], ['Permitir sempre', 'allow_always'], ['Negar', 'deny']] as const) {
+      posted.length = 0;
+      await click([...c.querySelectorAll('button')].find((b) => b.textContent === label)!);
+      expect(posted).toContainEqual({ type: 'permission', runId: 'r', requestId: 'q1', decision });
+      await act(async () => { vi.advanceTimersByTime(800); }); // a trava anti-duplo-clique solta
+    }
+  } finally {
+    vi.useRealTimers();
+  }
+  await unmount(root);
+});
+
+it('sem sugestão do CLI não há "Permitir sempre"', async () => {
+  const root = await mount();
+  await send({ type: 'snapshot', runs: [asking(false)] });
+  expect([...card('r').querySelectorAll('.permission-card button')].map((b) => b.textContent)).toEqual(['Permitir', 'Negar']);
+  await unmount(root);
+});
+
+it('com vários pedidos mostra um por vez e avisa quantos faltam; sem pedido, o card some', async () => {
+  const root = await mount();
+  await send({ type: 'snapshot', runs: [asking(true, { permissions: [
+    { requestId: 'q1', tool: 'Bash', summary: 'ls', hasAlways: true },
+    { requestId: 'q2', tool: 'Edit', summary: '/p/a.ts', hasAlways: false },
+  ] })] });
+  expect(card('r').querySelectorAll('.permission-card')).toHaveLength(1);
+  expect(card('r').querySelector('.permission-card')!.textContent).toContain('ls');
+  expect(card('r').querySelector('.permission-card')!.textContent).toContain('+1 pedido');
+  await send({ type: 'snapshot', runs: [chat('r', 'Permissão', 'running', {}, true)] });
+  expect(card('r').querySelector('.permission-card')).toBeNull();
+  await unmount(root);
+});
+
+it('o texto do pedido é exibido como texto (sem interpretar HTML)', async () => {
+  const root = await mount();
+  await send({ type: 'snapshot', runs: [asking(true, { permissions: [{ requestId: 'q1', tool: 'Bash', summary: '<img src=x onerror=alert(1)>', hasAlways: false }] })] });
+  expect(card('r').querySelector('.permission-card img')).toBeNull();
+  expect(card('r').querySelector('.permission-card')!.textContent).toContain('<img src=x onerror=alert(1)>');
+  await unmount(root);
+});
+
+it('um pedido novo NÃO rouba o foco de quem está digitando (Espaço/Enter não aprovam sem querer)', async () => {
+  const root = await mount();
+  await send({ type: 'snapshot', runs: [chat('r', 'Permissão', 'running', {}, true)] });
+  const input = document.querySelector('.toolbar textarea')! as HTMLTextAreaElement;
+  input.focus();
+  expect(document.activeElement).toBe(input);
+  await send({ type: 'snapshot', runs: [asking()] });
+  expect(card('r').querySelector('.permission-card')).not.toBeNull();
+  expect(document.activeElement).toBe(input);
+  await unmount(root);
+});
+
+it('duplo clique não aprova o pedido seguinte: os botões ficam travados logo após uma decisão', async () => {
+  vi.useFakeTimers();
+  try {
+    const root = await mount();
+    await send({ type: 'snapshot', runs: [asking(true, { permissions: [
+      { requestId: 'q1', tool: 'Bash', summary: 'a', hasAlways: false },
+      { requestId: 'q2', tool: 'Bash', summary: 'b', hasAlways: false },
+    ] })] });
+    posted.length = 0;
+    const allow = () => [...card('r').querySelectorAll('.permission-card button')].find((b) => b.textContent === 'Permitir') as HTMLButtonElement;
+    await click(allow());
+    await send({ type: 'snapshot', runs: [asking(true, { permissions: [{ requestId: 'q2', tool: 'Bash', summary: 'b', hasAlways: false }] })] }); // o host já mostra o próximo
+    await click(allow()); // segundo clique rápido
+    expect(posted.filter((m) => m.type === 'permission')).toEqual([{ type: 'permission', runId: 'r', requestId: 'q1', decision: 'allow' }]);
+    await act(async () => { vi.advanceTimersByTime(800); });
+    await click(allow());
+    expect(posted.filter((m) => m.type === 'permission').map((m) => m.requestId)).toEqual(['q1', 'q2']);
+    await unmount(root);
+  } finally {
+    vi.useRealTimers();
+  }
+});

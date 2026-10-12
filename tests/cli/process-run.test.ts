@@ -27,6 +27,118 @@ const happy = [
 ].join('\n') + '\n';
 
 describe('startProcessRun', () => {
+  describe('stdin e permissões', () => {
+    const ask = L({ type: 'control_request', request_id: 'req-1', request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'ls' } } });
+    const script = (extra: string[] = []) => [
+      L({ type: 'system', subtype: 'init', session_id: 's1' }),
+      ask,
+      L({ __wait: 'req-1' }),
+      ...extra,
+      L({ type: 'result', is_error: false, session_id: 's1' }),
+    ].join('\n') + '\n';
+
+    it('escreve a mensagem inicial no stdin e entrega o pedido ao onEvent', async () => {
+      const dir = tmp();
+      const f = path.join(dir, 's.ndjson'); writeFileSync(f, script());
+      const stdinFile = path.join(dir, 'stdin.log'); const replyFile = path.join(dir, 'reply.log');
+      const events: NormalizedEvent[] = [];
+      const run = startProcessRun('r1', {
+        command: process.execPath, args: [fake, f, '--stdin-file', stdinFile, '--reply-file', replyFile], cwd: process.cwd(),
+        input: '{"type":"user","message":{"role":"user","content":"oi"}}\n',
+      }, (e) => {
+        events.push(e);
+        if (e.type === 'permission_request') {
+          expect(run.respond(e.requestId, { behavior: 'allow', updatedInput: { command: 'ls' } })).toBe(true);
+        }
+      });
+      const r = await run.done;
+      expect(r.exitCode).toBe(0);
+      expect(events.map((e) => e.type)).toContain('permission_request');
+      expect(events.at(-1)).toMatchObject({ type: 'run_finished', status: 'done' });
+      expect(readFileSync(stdinFile, 'utf8')).toContain('"content":"oi"');
+      expect(JSON.parse(readFileSync(replyFile, 'utf8').trim())).toEqual({
+        type: 'control_response', response: { subtype: 'success', request_id: 'req-1', response: { behavior: 'allow', updatedInput: { command: 'ls' } } },
+      });
+    });
+
+    it('respond depois do fim do processo devolve false, sem exceção', async () => {
+      const f = path.join(tmp(), 's.ndjson'); writeFileSync(f, happy);
+      const run = startProcessRun('r1', { command: process.execPath, args: [fake, f], cwd: process.cwd(), input: 'x\n' }, () => {});
+      await run.done;
+      expect(run.respond('req-1', { behavior: 'deny', message: 'n' })).toBe(false);
+    });
+
+    it('processo que sai antes de ler o stdin não gera erro não tratado (EPIPE)', async () => {
+      const f = path.join(tmp(), 's.ndjson'); writeFileSync(f, happy);
+      const big = 'y'.repeat(1_000_000) + '\n';
+      const run = startProcessRun('r1', { command: process.execPath, args: [fake, f], cwd: process.cwd(), input: big }, () => {});
+      const r = await run.done;
+      expect(r.exitCode).toBe(0);
+    });
+
+    it('cancelar com pedido pendente encerra o processo e termina cancelled', async () => {
+      const dir = tmp(); const f = path.join(dir, 's.ndjson'); writeFileSync(f, script());
+      const events: NormalizedEvent[] = [];
+      const run = startProcessRun('r1', { command: process.execPath, args: [fake, f], cwd: process.cwd(), input: 'x\n' }, (e) => {
+        events.push(e);
+        if (e.type === 'permission_request') run.cancel();
+      });
+      const r = await run.done;
+      expect(r.cancelled).toBe(true);
+      expect(events.at(-1)).toMatchObject({ type: 'run_finished', status: 'cancelled' });
+    });
+
+    it('sem input o stdin continua fechado (Codex e usos antigos)', async () => {
+      const f = path.join(tmp(), 's.ndjson'); writeFileSync(f, happy);
+      const run = startProcessRun('r1', { command: process.execPath, args: [fake, f], cwd: process.cwd() }, () => {});
+      expect(run.respond('req-1', { behavior: 'deny', message: 'n' })).toBe(false);
+      await run.done;
+    });
+
+    it('fecha o stdin no run_finished: o CLI que espera o fim do stdin sai sozinho', async () => {
+      const f = path.join(tmp(), 's.ndjson');
+      writeFileSync(f, [L({ type: 'system', subtype: 'init', session_id: 's1' }), L({ type: 'result', is_error: false, session_id: 's1' })].join('\n') + '\n');
+      const run = startProcessRun('r1', { command: process.execPath, args: [fake, f, '--until-stdin-end'], cwd: process.cwd(), input: 'x\n' }, () => {});
+      const r = await run.done;
+      expect(r.exitCode).toBe(0);
+      expect(r.cancelled).toBe(false);
+    });
+
+    it('tarefa em segundo plano: 1º result mantém o stdin aberto; o 2º turno (task_notification → init → result) o fecha e o processo sai', async () => {
+      const f = path.join(tmp(), 's.ndjson');
+      const bg = (n: number) => L({ type: 'system', subtype: 'background_tasks_changed', tasks: Array.from({ length: n }, (_, k) => ({ task_id: `t${k}` })) });
+      writeFileSync(f, [
+        L({ type: 'system', subtype: 'init', session_id: 's1' }), bg(1), L({ type: 'result', is_error: false, session_id: 's1' }),
+        bg(0), L({ type: 'system', subtype: 'init', session_id: 's1' }), L({ type: 'result', is_error: false, session_id: 's1' }),
+      ].join('\n') + '\n');
+      const events: NormalizedEvent[] = [];
+      const run = startProcessRun('r1', { command: process.execPath, args: [fake, f, '--until-stdin-end'], cwd: process.cwd(), input: 'x\n' }, (e) => events.push(e));
+      const r = await run.done;
+      expect(r.exitCode).toBe(0);
+      expect(r.cancelled).toBe(false);
+      expect(events.filter((e) => e.type === 'run_finished')).toHaveLength(2);
+      expect(events.some((e) => e.type === 'run_resumed')).toBe(true);
+    });
+
+    it('com tarefa em segundo plano pendente o stdin segue aberto até o run_finished seguinte', async () => {
+      const f = path.join(tmp(), 's.ndjson');
+      const bg = (n: number) => L({ type: 'system', subtype: 'background_tasks_changed', tasks: Array.from({ length: n }, (_, k) => ({ task_id: `t${k}` })) });
+      writeFileSync(f, [
+        L({ type: 'system', subtype: 'init', session_id: 's1' }), bg(1), L({ type: 'result', is_error: false, session_id: 's1' }),
+      ].join('\n') + '\n');
+      const events: NormalizedEvent[] = [];
+      const run = startProcessRun('r1', { command: process.execPath, args: [fake, f, '--until-stdin-end'], cwd: process.cwd(), input: 'x\n' }, (e) => events.push(e));
+      let exited = false;
+      void run.done.then(() => { exited = true; });
+      await new Promise((r) => setTimeout(r, 600));
+      expect(events.at(-1)).toMatchObject({ type: 'run_finished' });
+      expect(exited).toBe(false); // o stdin continua aberto: o processo vive para a tarefa
+      run.cancel();
+      const r = await run.done;
+      expect(r.cancelled).toBe(true);
+    });
+  });
+
   it('o Claude roda como a extensão do VS Code (não como sdk-cli) e sem marcas de sessão filha; o Codex não é alterado', async () => {
     const dump = path.join(tmp(), 'env.json');
     const script = path.join(tmp(), 'dump.mjs');

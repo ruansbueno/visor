@@ -9,6 +9,15 @@ export interface Question {
   source: 'marker' | 'heuristic';
 }
 
+/** Pedido de permissão de ferramenta aguardando a pessoa (só o que a tela precisa). */
+export interface PermissionPrompt {
+  requestId: string;
+  tool: string;
+  summary: string;
+  /** o CLI sugeriu uma regra "permitir sempre" */
+  hasAlways: boolean;
+}
+
 export interface Run {
   id: string;
   /** Opções escolhidas ao criar o chat (CLI, modelo, esforço, permissões). */
@@ -32,6 +41,7 @@ export interface AgentNode {
   /** Id do agente no Claude Code (usado para continuar um subagente). */
   agentId?: string;
   question?: Question;
+  permissions?: PermissionPrompt[];
   /** Fechado à força pelo fim do run (ex.: tarefa em segundo plano); a conclusão real ainda pode corrigir o status. */
   closedByRun?: boolean;
   status: NodeStatus;
@@ -61,6 +71,12 @@ export type NormalizedEvent =
   | { type: 'run_resumed'; runId: string; sessionId?: string; ts: number }
   | { type: 'node_resumed'; runId: string; nodeId: string; ts: number }
   | { type: 'node_meta'; runId: string; nodeId: string; agentId: string; ts: number }
+  /** o CLI pede permissão para usar uma ferramenta (controle por stdin); a decisão volta pelo processo */
+  | {
+      type: 'permission_request'; runId: string; nodeId: string; requestId: string; tool: string;
+      input: Record<string, unknown>; description?: string; suggestions: unknown[]; ts: number;
+    }
+  | { type: 'permission_resolved'; runId: string; requestId: string; ts: number }
   /** limites da assinatura informados pelo CLI (fração 0..1); não pertence ao grafo do run */
   | { type: 'usage'; runId: string; fiveHour?: number; sevenDay?: number; fiveHourResetsAt?: number; sevenDayResetsAt?: number; ts: number };
 

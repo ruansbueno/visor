@@ -25,6 +25,68 @@ function run(lines: string[], opts: { end?: boolean; cancelled?: boolean } = {})
 }
 
 describe('StreamAdapter', () => {
+
+  describe('control_request', () => {
+    const line = (o: unknown) => JSON.stringify(o);
+    const can = (over: Record<string, unknown> = {}, reqOver: Record<string, unknown> = {}) => line({
+      type: 'control_request', request_id: 'req-1',
+      request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'ls' }, description: 'Lista', permission_suggestions: [{ type: 'addRules' }], ...reqOver },
+      ...over,
+    });
+
+    it('can_use_tool vira permission_request na raiz', () => {
+      const a = new StreamAdapter('r1');
+      const ev = a.push(can());
+      expect(ev.map((e) => e.type)).toEqual(['run_started', 'permission_request']);
+      expect(ev[1]).toMatchObject({
+        type: 'permission_request', runId: 'r1', nodeId: 'r1:root', requestId: 'req-1', tool: 'Bash',
+        input: { command: 'ls' }, description: 'Lista', suggestions: [{ type: 'addRules' }],
+      });
+    });
+
+    it('sem sugestões, suggestions é []', () => {
+      const ev = new StreamAdapter('r1').push(can({}, { permission_suggestions: undefined }));
+      expect(ev.at(-1)).toMatchObject({ suggestions: [] });
+    });
+
+    it('subtype desconhecido é ignorado, sem contar como malformado', () => {
+      const a = new StreamAdapter('r1');
+      expect(a.push(line({ type: 'control_request', request_id: 'x', request: { subtype: 'hook_callback' } }))).toEqual([]);
+      expect(a.malformedLines).toBe(0);
+    });
+
+    it('can_use_tool sem request_id ou sem tool_name conta como malformado e não vira evento', () => {
+      const a = new StreamAdapter('r1');
+      expect(a.push(can({ request_id: undefined }))).toEqual([]);
+      expect(a.push(can({}, { tool_name: undefined }))).toEqual([]);
+      expect(a.malformedLines).toBe(2);
+    });
+
+    it('input que não é objeto vira {}', () => {
+      const ev = new StreamAdapter('r1').push(can({}, { input: 'texto' }));
+      expect(ev.at(-1)).toMatchObject({ input: {} });
+    });
+  });
+
+  describe('hasBackgroundTasks', () => {
+    const changed = (n: number) => JSON.stringify({ type: 'system', subtype: 'background_tasks_changed', tasks: Array.from({ length: n }, (_, i) => ({ task_id: `t${i}` })) });
+
+    it('acompanha a lista de tarefas em segundo plano informada pelo CLI', () => {
+      const a = new StreamAdapter('r1');
+      expect(a.hasBackgroundTasks()).toBe(false);
+      a.push(changed(2));
+      expect(a.hasBackgroundTasks()).toBe(true);
+      a.push(changed(0));
+      expect(a.hasBackgroundTasks()).toBe(false);
+    });
+
+    it('background_tasks_changed sem lista é ignorado', () => {
+      const a = new StreamAdapter('r1');
+      a.push(changed(1));
+      a.push(JSON.stringify({ type: 'system', subtype: 'background_tasks_changed' }));
+      expect(a.hasBackgroundTasks()).toBe(true);
+    });
+  });
   it('converte rate_limit_event em evento usage', () => {
     const line = JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { unifiedWindows: { five_hour: { utilization: 0.12, resetsAt: 100 }, seven_day: { utilization: 0.23, resetsAt: 200 } } } });
     const ev = new StreamAdapter('r1').push(line);

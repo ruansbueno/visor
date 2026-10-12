@@ -5,4 +5,6 @@ export interface RunAdapter {
   malformedLines: number;
   push(line: string): NormalizedEvent[];
   end(cancelled: boolean): NormalizedEvent[];
+  /** Há tarefa em segundo plano pendente (só o Claude informa): o processo não deve ser encerrado ainda. */
+  hasBackgroundTasks?(): boolean;
 }

@@ -33,6 +33,7 @@ export class StreamAdapter implements RunAdapter {
   private readonly tasks = new Map<string, string>(); // task_id -> tool_use_id
   private readonly root: string;
   private readonly resuming: boolean;
+  private backgroundTasks = 0;
 
   constructor(private readonly runId: string, opts: StreamAdapterOptions = {}) {
     this.root = rootNodeId(runId);
@@ -82,6 +83,24 @@ export class StreamAdapter implements RunAdapter {
           ts,
         });
       }
+    } else if (m.type === 'system' && m.subtype === 'background_tasks_changed') {
+      if (Array.isArray(m.tasks)) this.backgroundTasks = m.tasks.length;
+    } else if (m.type === 'control_request') {
+      const r = m.request;
+      if (r?.subtype === 'can_use_tool') {
+        if (typeof m.request_id !== 'string' || typeof r.tool_name !== 'string') {
+          this.malformedLines += 1;
+        } else {
+          out.push(...this.start(m.session_id, ts));
+          out.push({
+            type: 'permission_request', runId: this.runId, nodeId: this.root, requestId: m.request_id, tool: r.tool_name,
+            input: r.input && typeof r.input === 'object' && !Array.isArray(r.input) ? r.input : {},
+            ...(typeof r.description === 'string' ? { description: r.description } : {}),
+            suggestions: Array.isArray(r.permission_suggestions) ? r.permission_suggestions : [],
+            ts,
+          });
+        }
+      }
     } else if (m.type === 'assistant' || m.type === 'user') {
       out.push(...this.start(m.session_id, ts));
       out.push(...this.content(m, ts));
@@ -97,6 +116,11 @@ export class StreamAdapter implements RunAdapter {
       }
     }
     return out;
+  }
+
+  /** O CLI informou tarefas em segundo plano ainda pendentes (o processo precisa continuar vivo para elas). */
+  hasBackgroundTasks(): boolean {
+    return this.backgroundTasks > 0;
   }
 
   end(cancelled: boolean): NormalizedEvent[] {

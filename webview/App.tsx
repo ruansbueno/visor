@@ -83,6 +83,7 @@ export function App() {
       onRemove: (runId) => send({ type: 'removeChat', runId }),
       onAddAgent: (runId) => openNewAgent(runId),
       onSend: (nodeId, text, attachments) => send({ type: 'send', nodeId, text, ...(attachments.length ? { attachments } : {}) }),
+      onPermission: (runId, requestId, decision) => send({ type: 'permission', runId, requestId, decision }),
       onOptions: (runId, options) => send({ type: 'setOptions', runId, options: options ?? {} }),
       models: (cli) => state.clis.find((c) => c.id === cli)?.models,
     }),

@@ -12,6 +12,8 @@ import type { ResumeSeed } from '../cli/stream-adapter';
 import type { NormalizedEvent } from '../core/schema';
 import { toEventViews, toRunView } from '../core/snapshot';
 import { RunStore } from '../core/store';
+import { alwaysSuggestion } from '../core/permission';
+import { userMessageLine, type PermissionDecision } from '../cli/claude-input';
 import type { AgentInfo, AttachedFile, CliInfo, HostMessage, NodeBox, WebviewMessage } from '../protocol';
 import { mergeAgents } from './agents';
 import { isSensitivePath, readRule } from './files';
@@ -53,6 +55,8 @@ interface Chat {
   active?: ProcessRun;
   busy: boolean;
   cancelRequested: boolean;
+  /** pedidos de permissão do Claude aguardando a pessoa (com a entrada e as sugestões completas, só no host) */
+  pending: Map<string, Extract<NormalizedEvent, { type: 'permission_request' }>>;
 }
 
 interface Turn {
@@ -145,6 +149,9 @@ export class RunController {
         return;
       case 'send':
         return this.send(msg.nodeId, msg.text, msg.attachments);
+      case 'permission':
+        this.answerPermission(msg.runId, msg.requestId, msg.decision);
+        return;
       case 'setOptions':
         this.setOptions(msg.runId, msg.options);
         return;
@@ -275,6 +282,37 @@ export class RunController {
     if (!chat) return;
     if (chat.active) chat.active.cancel();
     else if (chat.busy) chat.cancelRequested = true;
+  }
+
+  /** Decisão da pessoa sobre um pedido de permissão do Claude: vira o control_response no stdin do processo. */
+  private answerPermission(runId: string, requestId: string, decision: 'allow' | 'allow_always' | 'deny'): void {
+    const chat = this.chats.get(runId);
+    const req = chat?.pending.get(requestId);
+    if (!chat || !req) {
+      this.notice('warn', 'Esse pedido de permissão não está mais ativo.', chat);
+      return;
+    }
+    chat.pending.delete(requestId);
+    let answer: PermissionDecision;
+    if (decision === 'deny') {
+      answer = { behavior: 'deny', message: 'Negado pelo usuário no Visor.' };
+    } else {
+      const always = decision === 'allow_always' ? alwaysSuggestion(req.suggestions) : undefined;
+      answer = { behavior: 'allow', updatedInput: req.input, ...(always ? { updatedPermissions: [always] } : {}) };
+    }
+    const delivered = chat.active?.respond(requestId, answer) ?? false;
+    chat.store.apply({ type: 'permission_resolved', runId, requestId, ts: Date.now() });
+    this.dirty.add(runId);
+    this.schedule();
+    if (!delivered) this.notice('warn', 'Não consegui entregar a permissão: o processo já terminou.', chat);
+  }
+
+  /** O processo terminou: os pedidos que ninguém respondeu não existem mais (nem para a tela). */
+  private dropPendingPermissions(chat: Chat): void {
+    for (const requestId of chat.pending.keys()) {
+      chat.store.apply({ type: 'permission_resolved', runId: chat.store.run.id, requestId, ts: Date.now() });
+    }
+    chat.pending.clear();
   }
 
   private markDone(runId: string): void {
@@ -584,7 +622,7 @@ export class RunController {
       store.apply({ type: 'run_started', runId, ts: Date.now() }); // aparece no canvas na hora; o init do CLI traz a sessão
       store.apply({ type: 'node_event', runId, nodeId: store.rootId, kind: 'message', payload: { role: 'user', text: shown ?? prompt, ...(files.length ? { attachments: files.map((f) => f.name) } : {}) }, ts: Date.now() });
       this.dirty.add(runId);
-      chat = { store, busy: true, cancelRequested: false };
+      chat = { store, busy: true, cancelRequested: false, pending: new Map() };
       this.chats.set(runId, chat);
       this.warnIfManyInParallel(settings);
       this.postSnapshot();
@@ -684,6 +722,7 @@ export class RunController {
 
       let command: string;
       let args: string[];
+      let input: string | undefined;
       if (cli === 'codex') {
         command = settings.codexPath;
         // O Codex não tem --append-system-prompt: a instrução de pergunta vai no começo da primeira mensagem
@@ -697,8 +736,8 @@ export class RunController {
         });
       } else {
         command = settings.claudePath;
+        input = userMessageLine(t.prompt);
         args = buildClaudeArgs({
-          prompt: t.prompt,
           permissionMode: effectiveMode,
           // Só LEITURA dos anexos de fora do projeto, e só nesta mensagem (nunca a pasta pai, nunca escrita).
           allowedTools: [...settings.allowedTools, ...outsideFiles(t.attachments ?? [], store.run.cwd).map(readRule)],
@@ -714,6 +753,7 @@ export class RunController {
         {
           command, args, cwd: store.run.cwd,
           ...(cli === 'codex' ? { adapter: 'codex' as const } : {}),
+          ...(input !== undefined ? { input } : {}),
           ...(resume ? { resume } : {}),
         },
         (e) => {
@@ -721,6 +761,7 @@ export class RunController {
             this.deps.post({ type: 'usage', ...(e.fiveHour !== undefined ? { fiveHour: e.fiveHour } : {}), ...(e.sevenDay !== undefined ? { sevenDay: e.sevenDay } : {}), ...(e.fiveHourResetsAt !== undefined ? { fiveHourResetsAt: e.fiveHourResetsAt } : {}), ...(e.sevenDayResetsAt !== undefined ? { sevenDayResetsAt: e.sevenDayResetsAt } : {}) });
             return;
           }
+          if (e.type === 'permission_request') chat.pending.set(e.requestId, e);
           store.apply(e);
           this.dirty.add(store.run.id);
           this.schedule();
@@ -731,6 +772,7 @@ export class RunController {
 
       const result = await run.done;
       chat.active = undefined;
+      this.dropPendingPermissions(chat);
       this.flush();
 
       if (result.cancelled) {
@@ -744,6 +786,7 @@ export class RunController {
       }
     } catch (err) {
       chat.active = undefined;
+      this.dropPendingPermissions(chat);
       this.closeStore(chat);
       this.notice('error', `Falha inesperada: ${err instanceof Error ? err.message : String(err)}`, chat);
     } finally {

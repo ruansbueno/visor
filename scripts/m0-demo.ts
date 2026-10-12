@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { buildClaudeArgs } from '../src/cli/claude-args';
+import { userMessageLine } from '../src/cli/claude-input';
 import { startProcessRun } from '../src/cli/process-run';
 import { createHookChannel } from '../src/cli/hook-channel';
 import { writeHookSettings } from '../src/cli/hook-settings';
@@ -19,7 +20,7 @@ const cwd = path.resolve('fixtures/project');
 if (mode === 'panel') {
   const store = new RunStore({ runId: 'demo', source: 'panel', cwd });
   const run = startProcessRun('demo', {
-    command: 'claude', args: buildClaudeArgs({ prompt, permissionMode: 'acceptEdits' }), cwd,
+    command: 'claude', args: buildClaudeArgs({ permissionMode: 'acceptEdits' }), input: userMessageLine(prompt), cwd,
   }, (e) => { store.apply(e); console.log(formatTree(store), '\n'); });
   process.on('SIGINT', () => run.cancel());
   const r = await run.done;
@@ -34,10 +35,11 @@ if (mode === 'panel') {
     console.log(formatTree(store), '\n');
   });
   const settings = writeHookSettings(tmp, path.resolve('hooks/relay.mjs'));
-  const child = spawn('claude', buildClaudeArgs({ prompt, permissionMode: 'acceptEdits', settingsFile: settings }), {
-    cwd, stdio: ['ignore', 'ignore', 'inherit'],
+  const child = spawn('claude', buildClaudeArgs({ permissionMode: 'acceptEdits', settingsFile: settings }), {
+    cwd, stdio: ['pipe', 'ignore', 'inherit'],
     env: { ...process.env, VISOR_PIPE: channel.path, VISOR_RUN_ID: 'demo' },
   });
+  child.stdin.end(userMessageLine(prompt));
   await new Promise((r) => child.on('close', r));
   await new Promise((r) => setTimeout(r, 300));
   for (const e of adapter.end(false)) store.apply(e);

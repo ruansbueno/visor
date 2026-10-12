@@ -20,6 +20,7 @@ export function toRunView(store: RunStore, busy = false): RunView {
       endedAt: n.endedAt,
       eventCount: n.eventCount,
       ...(n.question ? { question: n.question } : {}),
+      ...(n.permissions?.length ? { permissions: n.permissions } : {}),
     })),
     edges: store.edges(),
   };

@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import type { NormalizedEvent } from '../core/schema';
+import { permissionResponseLine, type PermissionDecision } from './claude-input';
 import { CodexAdapter } from './codex-adapter';
 import type { RunAdapter } from './run-adapter';
 import { StreamAdapter, type ResumeSeed } from './stream-adapter';
@@ -14,6 +15,8 @@ export interface ProcessRunOptions {
   cancelGraceMs?: number;
   /** Qual CLI gera a saída (padrão: claude). */
   adapter?: 'claude' | 'codex';
+  /** Linhas (já com \n) escritas no stdin ao iniciar; só então o stdin é um pipe. O Claude manda a mensagem do turno por aqui. */
+  input?: string;
   /** Presente quando este processo continua uma sessão existente (--resume / exec resume). */
   resume?: ResumeSeed;
 }
@@ -29,6 +32,8 @@ export interface ProcessRunResult {
 
 export interface ProcessRun {
   cancel(): void;
+  /** Responde a um pedido de permissão pelo stdin. false se o stdin já não está disponível. */
+  respond(requestId: string, decision: PermissionDecision): boolean;
   done: Promise<ProcessRunResult>;
 }
 
@@ -59,7 +64,13 @@ export function startProcessRun(
       ? new CodexAdapter(runId, opts.resume ? { resume: true } : undefined)
       : new StreamAdapter(runId, opts.resume ? { resume: opts.resume } : undefined);
   const isWin = process.platform === 'win32';
-  const emit = (events: NormalizedEvent[]) => events.forEach(onEvent);
+  let closeStdin: () => void = () => {};
+  const emit = (events: NormalizedEvent[]) => {
+    events.forEach(onEvent);
+    // O turno acabou e não há tarefa em segundo plano esperando: sem mais o que responder, fechar o stdin deixa o CLI sair.
+    // Com tarefa pendente o processo precisa seguir vivo; o run_finished do turno seguinte fecha.
+    if (events.some((e) => e.type === 'run_finished') && !adapter.hasBackgroundTasks?.()) closeStdin();
+  };
 
   let cancelled = false;
   let spawnError: string | undefined;
@@ -71,11 +82,24 @@ export function startProcessRun(
     cwd: opts.cwd,
     env: childEnv(opts),
     detached: !isWin,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: [opts.input !== undefined ? 'pipe' : 'ignore', 'pipe', 'pipe'],
   });
 
-  createInterface({ input: child.stdout }).on('line', (line) => emit(adapter.push(line)));
-  child.stderr.on('data', (chunk: Buffer) => {
+  let stdinOpen = false;
+  closeStdin = () => {
+    if (!stdinOpen) return;
+    stdinOpen = false;
+    child.stdin?.end();
+  };
+  if (opts.input !== undefined && child.stdin) {
+    stdinOpen = true;
+    // O CLI pode sair antes de ler tudo (EPIPE): não é erro do Visor.
+    child.stdin.on('error', () => { stdinOpen = false; });
+    child.stdin.write(opts.input);
+  }
+
+  createInterface({ input: child.stdout! }).on('line', (line) => emit(adapter.push(line)));
+  child.stderr!.on('data', (chunk: Buffer) => {
     stderrTail = (stderrTail + chunk.toString('utf8')).slice(-STDERR_TAIL_BYTES);
   });
 
@@ -84,6 +108,7 @@ export function startProcessRun(
     const finish = (exitCode: number | null, signal: NodeJS.Signals | null) => {
       if (settled) return;
       settled = true;
+      closeStdin();
       emit(adapter.end(cancelled));
       clearTimeout(killTimer);
       resolve({ exitCode, signal, spawnError, stderrTail, malformedLines: adapter.malformedLines, cancelled });
@@ -97,9 +122,15 @@ export function startProcessRun(
 
   return {
     done,
+    respond(requestId, decision) {
+      if (!stdinOpen || !child.stdin || child.stdin.destroyed) return false;
+      child.stdin.write(permissionResponseLine(requestId, decision));
+      return true;
+    },
     cancel() {
       if (cancelled || child.pid === undefined) return;
       cancelled = true;
+      closeStdin();
       if (isWin) {
         spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F']);
       } else {

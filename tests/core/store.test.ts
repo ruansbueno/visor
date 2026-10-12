@@ -13,6 +13,59 @@ const child = (id: string, parent: string | null = null) => ({
 });
 
 describe('RunStore', () => {
+
+  describe('permissões', () => {
+    const req = (id: string, extra: Record<string, unknown> = {}) => ({
+      type: 'permission_request' as const, runId: 'r1', nodeId: 'r1:root', requestId: id, tool: 'Bash',
+      input: { command: `cmd-${id}` }, suggestions: [{ type: 'addRules', behavior: 'allow', rules: [] }], ts: 3, ...extra,
+    });
+
+    it('pedido entra na fila do node sem mudar o status; resolved remove só o pedido certo', () => {
+      const s = newStore();
+      s.apply(req('a'));
+      s.apply(req('b'));
+      const root = s.nodes.get('r1:root')!;
+      expect(root.status).toBe('running');
+      expect(root.permissions!.map((p) => p.requestId)).toEqual(['a', 'b']);
+      expect(root.permissions![0]).toEqual({ requestId: 'a', tool: 'Bash', summary: 'cmd-a', hasAlways: true });
+      s.apply({ type: 'permission_resolved', runId: 'r1', requestId: 'a', ts: 4 });
+      expect(root.permissions!.map((p) => p.requestId)).toEqual(['b']);
+    });
+
+    it('o nome da ferramenta também é limpo', () => {
+      const s = newStore();
+      s.apply(req('a', { tool: 'Ba\u202esh' }));
+      expect(s.nodes.get('r1:root')!.permissions![0]!.tool).toBe('Bash');
+    });
+
+    it('hasAlways é false sem sugestão', () => {
+      const s = newStore();
+      s.apply(req('a', { suggestions: [] }));
+      expect(s.nodes.get('r1:root')!.permissions![0]!.hasAlways).toBe(false);
+    });
+
+    it('pedido para node inexistente cai na raiz', () => {
+      const s = newStore();
+      s.apply(req('a', { nodeId: 'r1:nao-existe' }));
+      expect(s.nodes.get('r1:root')!.permissions).toHaveLength(1);
+    });
+
+    it('run_finished NÃO apaga pedidos pendentes (o processo segue vivo com tarefa em segundo plano esperando a resposta)', () => {
+      const s = newStore();
+      s.apply(req('a'));
+      s.apply({ type: 'run_finished', runId: 'r1', status: 'done', ts: 9 });
+      expect(s.nodes.get('r1:root')!.permissions!.map((p) => p.requestId)).toEqual(['a']);
+    });
+
+    it('pedido de uma tarefa em segundo plano que chega depois do run_finished ainda é registrado e pode ser resolvido', () => {
+      const s = newStore();
+      s.apply({ type: 'run_finished', runId: 'r1', status: 'done', ts: 9 });
+      s.apply(req('late'));
+      expect(s.nodes.get('r1:root')!.permissions!.map((p) => p.requestId)).toEqual(['late']);
+      s.apply({ type: 'permission_resolved', runId: 'r1', requestId: 'late', ts: 10 });
+      expect(s.nodes.get('r1:root')!.permissions).toEqual([]);
+    });
+  });
   it('run_started cria a raiz em running', () => {
     const s = newStore();
     expect(s.run.status).toBe('running');

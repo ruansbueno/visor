@@ -1,5 +1,4 @@
 export interface ClaudeArgsInput {
-  prompt: string;
   permissionMode?: string;
   allowedTools?: string[];
   disallowedTools?: string[];
@@ -11,7 +10,8 @@ export interface ClaudeArgsInput {
 }
 
 export function buildClaudeArgs(i: ClaudeArgsInput): string[] {
-  const args = ['-p', '--output-format', 'stream-json', '--verbose'];
+  // A mensagem do turno vai pelo stdin (stream-json) e os pedidos de permissão voltam pelo mesmo canal (stdio).
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--input-format', 'stream-json', '--permission-prompt-tool=stdio'];
   if (i.permissionMode) args.push('--permission-mode', i.permissionMode);
   // Cada regra é um argumento: vírgulas e espaços dentro de uma regra (ex.: caminhos) não a quebram.
   if (i.allowedTools?.length) args.push('--allowedTools', ...i.allowedTools);
@@ -21,7 +21,5 @@ export function buildClaudeArgs(i: ClaudeArgsInput): string[] {
   if (i.model) args.push('--model', i.model);
   if (i.effort) args.push('--effort', i.effort);
   if (i.appendSystemPrompt) args.push('--append-system-prompt', i.appendSystemPrompt);
-  // O prompt vem depois de "--" para nunca ser lido como flag.
-  args.push('--', i.prompt);
   return args;
 }

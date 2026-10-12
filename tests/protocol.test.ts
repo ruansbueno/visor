@@ -2,6 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { parseWebviewMessage, describeRejected, MAX_PROMPT_BYTES, MAX_PASTE_BASE64 } from '../src/protocol';
 
 describe('parseWebviewMessage', () => {
+  it('permission: aceita as três decisões e valida os ids', () => {
+    for (const decision of ['allow', 'allow_always', 'deny'] as const) {
+      expect(parseWebviewMessage({ type: 'permission', runId: 'r1', requestId: 'q1', decision })).toEqual({ type: 'permission', runId: 'r1', requestId: 'q1', decision });
+    }
+    expect(parseWebviewMessage({ type: 'permission', runId: 'r1', requestId: 'q1', decision: 'talvez' })).toBeNull();
+    expect(parseWebviewMessage({ type: 'permission', runId: '', requestId: 'q1', decision: 'allow' })).toBeNull();
+    expect(parseWebviewMessage({ type: 'permission', runId: 'r1', requestId: 'x'.repeat(301), decision: 'allow' })).toBeNull();
+    expect(parseWebviewMessage({ type: 'permission', runId: 'r1', decision: 'allow' })).toBeNull();
+  });
+
   it('aceita ready, cancel e start válido', () => {
     expect(parseWebviewMessage({ type: 'ready' })).toEqual({ type: 'ready' });
     expect(parseWebviewMessage({ type: 'cancel', runId: 'r' })).toEqual({ type: 'cancel', runId: 'r' });

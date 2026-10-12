@@ -1,53 +1,51 @@
 import { it, expect } from 'vitest';
 import { buildClaudeArgs } from '../../src/cli/claude-args';
 
-it('monta args mínimos do modo painel', () => {
-  expect(buildClaudeArgs({ prompt: 'oi' })).toEqual([
-    '-p', '--output-format', 'stream-json', '--verbose', '--', 'oi',
-  ]);
+const BASE = ['-p', '--output-format', 'stream-json', '--verbose', '--input-format', 'stream-json', '--permission-prompt-tool=stdio'];
+
+it('monta args mínimos do modo painel (a mensagem vai pelo stdin, não pelos argumentos)', () => {
+  expect(buildClaudeArgs({})).toEqual(BASE);
 });
 
-it('inclui permissões, resume e settings antes do prompt', () => {
+it('inclui permissões, resume e settings', () => {
   expect(
     buildClaudeArgs({
-      prompt: 'oi', permissionMode: 'acceptEdits',
+      permissionMode: 'acceptEdits',
       allowedTools: ['Bash(npm test:*)', 'Read'], disallowedTools: ['WebFetch'],
       resume: 'sess-1', settingsFile: '/tmp/s.json',
     }),
   ).toEqual([
-    '-p', '--output-format', 'stream-json', '--verbose',
+    ...BASE,
     '--permission-mode', 'acceptEdits',
     '--allowedTools', 'Bash(npm test:*)', 'Read',
     '--disallowedTools', 'WebFetch',
     '--resume', 'sess-1',
     '--settings', '/tmp/s.json',
-    '--', 'oi',
   ]);
 });
 
-it('o prompt vem depois de "--", então nunca é interpretado como flag', () => {
-  const args = buildClaudeArgs({ prompt: '--dangerously-skip-permissions' });
-  expect(args.slice(-2)).toEqual(['--', '--dangerously-skip-permissions']);
-  expect(args).not.toContain('--permission-mode');
+it('nunca coloca prompt nos argumentos', () => {
+  expect(buildClaudeArgs({ appendSystemPrompt: 'regra' })).not.toContain('--');
 });
 
-it('appendSystemPrompt vai antes do "--" e o prompt continua por último', () => {
-  const args = buildClaudeArgs({ prompt: 'oi', appendSystemPrompt: 'instrução' });
-  expect(args).toEqual(['-p', '--output-format', 'stream-json', '--verbose', '--append-system-prompt', 'instrução', '--', 'oi']);
+it('appendSystemPrompt entra nos argumentos', () => {
+  expect(buildClaudeArgs({ appendSystemPrompt: 'instrução' })).toEqual([...BASE, '--append-system-prompt', 'instrução']);
 });
 
-it('model e effort entram antes do "--" e o prompt continua por último', () => {
-  const args = buildClaudeArgs({ prompt: 'oi', model: 'opus', effort: 'high' });
-  expect(args).toEqual(['-p', '--output-format', 'stream-json', '--verbose', '--model', 'opus', '--effort', 'high', '--', 'oi']);
+it('model e effort entram nos argumentos', () => {
+  expect(buildClaudeArgs({ model: 'opus', effort: 'high' })).toEqual([...BASE, '--model', 'opus', '--effort', 'high']);
 });
 
 it('sem model/effort nada é acrescentado e --add-dir nunca é usado', () => {
-  expect(buildClaudeArgs({ prompt: 'oi' })).not.toContain('--add-dir');
-  expect(buildClaudeArgs({ prompt: 'oi' })).not.toContain('--model');
-  expect(buildClaudeArgs({ prompt: 'oi' })).not.toContain('--effort');
+  const args = buildClaudeArgs({});
+  expect(args).not.toContain('--add-dir');
+  expect(args).not.toContain('--model');
+  expect(args).not.toContain('--effort');
+  expect(args).not.toContain('--permission-mode');
 });
 
 it('cada regra de tool vai como argumento próprio (vírgula/espaço dentro de uma regra não a quebra)', () => {
-  const args = buildClaudeArgs({ prompt: 'oi', allowedTools: ['Read(//a/b,c d.txt)', 'Bash(ls)'], disallowedTools: ['Edit(//x/y z)'] });
-  expect(args).toEqual(['-p', '--output-format', 'stream-json', '--verbose', '--allowedTools', 'Read(//a/b,c d.txt)', 'Bash(ls)', '--disallowedTools', 'Edit(//x/y z)', '--', 'oi']);
+  expect(buildClaudeArgs({ allowedTools: ['Read(//a/b,c d.txt)', 'Bash(ls)'], disallowedTools: ['Edit(//x/y z)'] })).toEqual([
+    ...BASE, '--allowedTools', 'Read(//a/b,c d.txt)', 'Bash(ls)', '--disallowedTools', 'Edit(//x/y z)',
+  ]);
 });

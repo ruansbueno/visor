@@ -1,4 +1,4 @@
-import type { NodeStatus, Question } from './core/schema';
+import type { NodeStatus, PermissionPrompt, Question } from './core/schema';
 import type { CliCheck } from './cli/detect';
 import { CLI_IDS, parseAttachments, parseChatOptions, type ChatOptions, type CliId, type Effort } from './core/options';
 
@@ -13,6 +13,8 @@ export interface NodeView {
   endedAt?: number;
   eventCount: number;
   question?: Question;
+  /** pedidos de permissão pendentes, do mais antigo ao mais novo */
+  permissions?: PermissionPrompt[];
 }
 
 /** Posição (e tamanho, nos cartões de chat) de um node no canvas, escolhidos pela pessoa. */
@@ -109,6 +111,7 @@ export type WebviewMessage =
   | { type: 'cancelPending' }
   | { type: 'setOptions'; runId: string; options: ChatOptions }
   | { type: 'pickFiles'; requestId: string }
+  | { type: 'permission'; runId: string; requestId: string; decision: 'allow' | 'allow_always' | 'deny' }
   /** imagem colada no campo (Cmd/Ctrl+V): o host grava num arquivo temporário e devolve como anexo */
   | { type: 'pasteImage'; requestId: string; mime: string; data: string }
   | { type: 'listClis' }
@@ -215,6 +218,10 @@ export function parseWebviewMessage(raw: unknown): WebviewMessage | null {
         && typeof m.data === 'string' && m.data.length > 0 && m.data.length <= MAX_PASTE_BASE64 && /^[A-Za-z0-9+/]+={0,2}$/.test(m.data);
       return ok ? { type: 'pasteImage', requestId: m.requestId as string, mime: m.mime as string, data: m.data as string } : null;
     }
+    case 'permission':
+      return validNodeId(m.runId) && validNodeId(m.requestId) && (m.decision === 'allow' || m.decision === 'allow_always' || m.decision === 'deny')
+        ? { type: 'permission', runId: m.runId, requestId: m.requestId, decision: m.decision }
+        : null;
     case 'listClis':
       return { type: 'listClis' };
     case 'listCapabilities':

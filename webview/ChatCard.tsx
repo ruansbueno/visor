@@ -7,6 +7,7 @@ import { buildOptions, summarizeOptions } from './option-lists';
 import { STATUS_GLYPH, STATUS_LABEL } from './format';
 import type { ChatNodeData } from './graph';
 import { LogList } from './LogView';
+import { PermissionCard } from './PermissionCard';
 import { QuestionCard } from './QuestionCard';
 
 /** O chat no canvas: cabeçalho, conversa ao vivo e campo de envio, sem precisar abrir nada. */
@@ -98,6 +99,9 @@ export const ChatCard = memo(function ChatCard({ data, selected }: NodeProps) {
       >
         <LogList events={log?.events ?? null} total={log?.total ?? 0} userLabel="Você" />
         {waiting && d.question && <QuestionCard question={d.question} canSend={!d.busy} onAnswer={(text) => ctx.onSend(d.rootId, text, [])} />}
+        {d.permission && (
+          <PermissionCard prompt={d.permission} more={(d.permissionCount ?? 1) - 1} onAnswer={(choice) => ctx.onPermission(d.runId, d.permission!.requestId, choice)} />
+        )}
         {(running || d.busy) && (
           <div className="chat-running"><span className="spinner" aria-hidden="true" /> Executando…</div>
         )}

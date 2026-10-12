@@ -1,4 +1,4 @@
-import type { NodeStatus, Question } from '../src/core/schema';
+import type { NodeStatus, PermissionPrompt, Question } from '../src/core/schema';
 import { layoutForest } from '../src/core/layout';
 import type { ChatOptions, EventView, NodeBox, RunView } from '../src/protocol';
 
@@ -16,6 +16,9 @@ export interface ChatNodeData {
   status: NodeStatus;
   busy: boolean;
   question?: Question;
+  /** pedido de permissão mais antigo ainda pendente (o card mostra um por vez) */
+  permission?: PermissionPrompt;
+  permissionCount?: number;
   options?: ChatOptions;
   /** conversa ao vivo do chat (vem do estado da Webview, não do snapshot) */
   log?: { events: EventView[]; total: number };
@@ -67,6 +70,7 @@ export function toFlow(runs: RunView[], boxes: Record<string, NodeBox>) {
           data: {
             runId: run.id, rootId: n.id, title: run.title || 'Chat', status: n.status, busy: run.busy,
             ...(n.question ? { question: n.question } : {}),
+            ...(n.permissions?.length ? { permission: n.permissions[0], permissionCount: n.permissions.length } : {}),
             ...(run.options ? { options: run.options } : {}),
           } satisfies ChatNodeData,
         };

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createHookChannel } from '../src/cli/hook-channel';
 import { writeHookSettings } from '../src/cli/hook-settings';
 import { buildClaudeArgs } from '../src/cli/claude-args';
+import { userMessageLine } from '../src/cli/claude-input';
 
 const [name, prompt] = process.argv.slice(2);
 if (!name) {
@@ -33,9 +34,10 @@ const cleanup = async () => {
 };
 
 if (prompt) {
-  const child = spawn('claude', buildClaudeArgs({ prompt, permissionMode: 'acceptEdits', settingsFile: settings }), {
-    cwd, env, stdio: ['ignore', 'ignore', 'inherit'],
+  const child = spawn('claude', buildClaudeArgs({ permissionMode: 'acceptEdits', settingsFile: settings }), {
+    cwd, env, stdio: ['pipe', 'ignore', 'inherit'],
   });
+  child.stdin.end(userMessageLine(prompt));
   child.on('close', () => void cleanup());
 } else {
   console.error('Abra um terminal e rode, na pasta fixtures/project:\n');

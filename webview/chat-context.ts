@@ -8,6 +8,7 @@ export interface ChatCtx {
   onRemove(runId: string): void;
   onAddAgent(runId: string): void;
   onSend(nodeId: string, text: string, attachments: string[]): void;
+  onPermission(runId: string, requestId: string, decision: 'allow' | 'allow_always' | 'deny'): void;
   onOptions(runId: string, options: ChatOptions | undefined): void;
   /** modelos que a CLI informa (vazio = aliases fixos) */
   models(cli: string): ModelInfo[] | undefined;
@@ -15,5 +16,5 @@ export interface ChatCtx {
 
 const noop = () => {};
 export const ChatContext = createContext<ChatCtx>({
-  onRename: noop, onCancel: noop, onMarkDone: noop, onRemove: noop, onAddAgent: noop, onSend: noop, onOptions: noop, models: () => undefined,
+  onRename: noop, onCancel: noop, onMarkDone: noop, onRemove: noop, onAddAgent: noop, onSend: noop, onPermission: noop, onOptions: noop, models: () => undefined,
 });

@@ -1,3 +1,4 @@
+import { alwaysSuggestion, cleanLabel, summarizeToolInput } from './permission';
 import {
   type AgentEvent, type AgentNode, type NormalizedEvent, type Run,
   rootNodeId,
@@ -30,7 +31,9 @@ export class RunStore {
   apply(e: NormalizedEvent): void {
     // Depois de run_finished o grafo está fechado: o run não pode ser reaberto nem ganhar nodes por eventos tardios.
     // Eventos de nodes já existentes (conclusão e log de tarefas em segundo plano) ainda são aceitos.
-    const lateOk = e.type === 'run_resumed' || e.type === 'node_finished' || e.type === 'node_event' || e.type === 'node_meta' || e.type === 'node_resumed';
+    const lateOk = e.type === 'run_resumed' || e.type === 'node_finished' || e.type === 'node_event' || e.type === 'node_meta' || e.type === 'node_resumed'
+      // Tarefa em segundo plano pode pedir permissão com o processo ainda vivo, depois do fim do turno principal.
+      || e.type === 'permission_request' || e.type === 'permission_resolved';
     if (this.run.endedAt !== undefined && !lateOk) return;
     switch (e.type) {
       case 'run_started': {
@@ -95,6 +98,22 @@ export class RunStore {
         node.status = 'running';
         delete node.endedAt;
         delete node.closedByRun;
+        return;
+      }
+      case 'permission_request': {
+        const node = this.nodes.get(e.nodeId) ?? this.nodes.get(this.rootId);
+        if (!node) return;
+        (node.permissions ??= []).push({
+          requestId: e.requestId, tool: cleanLabel(e.tool),
+          summary: summarizeToolInput(e.tool, e.input, e.description),
+          hasAlways: alwaysSuggestion(e.suggestions) !== undefined,
+        });
+        return;
+      }
+      case 'permission_resolved': {
+        for (const node of this.nodes.values()) {
+          if (node.permissions) node.permissions = node.permissions.filter((p) => p.requestId !== e.requestId);
+        }
         return;
       }
       case 'usage':
