@@ -1,5 +1,7 @@
 # Visor - for AI devs
 
+[![Latest release](https://img.shields.io/github/v/release/ruansbueno/visor)](https://github.com/ruansbueno/visor/releases/latest)
+
 See your coding agents' work as a **canvas**: each conversation is a card, each subagent a node linked to it, with live status (running, waiting for your answer, done, error).
 
 Visor is a **visual wrapper around the CLIs you already have installed**. It is not its own client, has no login screen, and never reads or stores credentials.
@@ -19,7 +21,7 @@ Visor is not on the Marketplace yet. Install it from GitHub:
 
 1. Open the [latest release](https://github.com/ruansbueno/visor/releases/latest) and download the `visor-for-ai-devs-*.vsix` file.
 2. In VS Code, open the Extensions view (`Cmd/Ctrl+Shift+X`), click the `…` menu at the top right, choose **Install from VSIX…** and select the file.
-   Or from a terminal: `code --install-extension visor-for-ai-devs-0.1.0.vsix`
+   Or from a terminal: `code --install-extension visor-for-ai-devs-*.vsix`
 3. Click the Visor icon (a circle of dots) in the activity bar, or run **Visor: Open agents canvas** from the Command Palette.
 
 Make sure at least one CLI below is installed **and that you have logged in to it yourself** (run `claude` or `codex` once in a terminal).
