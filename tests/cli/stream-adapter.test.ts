@@ -25,6 +25,16 @@ function run(lines: string[], opts: { end?: boolean; cancelled?: boolean } = {})
 }
 
 describe('StreamAdapter', () => {
+  it('converte rate_limit_event em evento usage', () => {
+    const line = JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { unifiedWindows: { five_hour: { utilization: 0.12, resetsAt: 100 }, seven_day: { utilization: 0.23, resetsAt: 200 } } } });
+    const ev = new StreamAdapter('r1').push(line);
+    expect(ev).toMatchObject([{ type: 'usage', runId: 'r1', fiveHour: 0.12, sevenDay: 0.23, fiveHourResetsAt: 100, sevenDayResetsAt: 200 }]);
+  });
+
+  it('ignora rate_limit_event sem janelas', () => {
+    expect(new StreamAdapter('r1').push(JSON.stringify({ type: 'rate_limit_event', rate_limit_info: {} }))).toEqual([]);
+  });
+
   it('system/init inicia o run com session_id', () => {
     const { s } = run([init]);
     expect(s.run.sessionId).toBe('s1');

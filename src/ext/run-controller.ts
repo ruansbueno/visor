@@ -717,6 +717,10 @@ export class RunController {
           ...(resume ? { resume } : {}),
         },
         (e) => {
+          if (e.type === 'usage') {
+            this.deps.post({ type: 'usage', ...(e.fiveHour !== undefined ? { fiveHour: e.fiveHour } : {}), ...(e.sevenDay !== undefined ? { sevenDay: e.sevenDay } : {}), ...(e.fiveHourResetsAt !== undefined ? { fiveHourResetsAt: e.fiveHourResetsAt } : {}), ...(e.sevenDayResetsAt !== undefined ? { sevenDayResetsAt: e.sevenDayResetsAt } : {}) });
+            return;
+          }
           store.apply(e);
           this.dirty.add(store.run.id);
           this.schedule();

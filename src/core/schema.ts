@@ -60,7 +60,9 @@ export type NormalizedEvent =
   | { type: 'run_finished'; runId: string; status: FinalStatus; question?: Question; ts: number }
   | { type: 'run_resumed'; runId: string; sessionId?: string; ts: number }
   | { type: 'node_resumed'; runId: string; nodeId: string; ts: number }
-  | { type: 'node_meta'; runId: string; nodeId: string; agentId: string; ts: number };
+  | { type: 'node_meta'; runId: string; nodeId: string; agentId: string; ts: number }
+  /** limites da assinatura informados pelo CLI (fração 0..1); não pertence ao grafo do run */
+  | { type: 'usage'; runId: string; fiveHour?: number; sevenDay?: number; fiveHourResetsAt?: number; sevenDayResetsAt?: number; ts: number };
 
 export const rootNodeId = (runId: string) => `${runId}:root`;
 export const subagentNodeId = (runId: string, invocationId: string) => `${runId}:${invocationId}`;

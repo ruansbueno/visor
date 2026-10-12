@@ -16,6 +16,8 @@ export interface ViewState {
   authDismissed: boolean;
   /** inícios de conversa em andamento no host (detecção do CLI, confirmação) */
   starting: number;
+  /** limites da assinatura (fração 0..1) do último evento do CLI */
+  usage: { fiveHour?: number; sevenDay?: number; fiveHourResetsAt?: number; sevenDayResetsAt?: number } | null;
   agents: AgentInfo[];
   clis: CliInfo[];
   /** skills/comandos e modelo padrão informados pelo CLI */
@@ -36,7 +38,7 @@ export type Action =
   | { type: 'moved'; nodeId: string; box: NodeBox }
   | { type: 'files_consumed' };
 
-export const initialState: ViewState = { checks: {}, runs: [], notices: [], nextNoticeId: 1, authDismissed: false, starting: 0, agents: [], clis: [], caps: { commands: [] }, picked: null, chatLogs: {}, layout: {}, inspectedId: null, log: null };
+export const initialState: ViewState = { checks: {}, runs: [], notices: [], nextNoticeId: 1, authDismissed: false, starting: 0, usage: null, agents: [], clis: [], caps: { commands: [] }, picked: null, chatLogs: {}, layout: {}, inspectedId: null, log: null };
 const MAX_NOTICES = 5;
 
 /** Mantém a referência anterior de cada run cujo conteúdo não mudou (evita re-render em cascata). */
@@ -79,6 +81,10 @@ export function reduce(state: ViewState, action: Action): ViewState {
       return { ...state, layout: { ...state.layout, [action.nodeId]: action.box } };
     case 'starting':
       return { ...state, starting: action.count };
+    case 'usage': {
+      const { type: _t, ...usage } = action;
+      return { ...state, usage: { ...state.usage, ...usage } };
+    }
     case 'clis':
       return { ...state, clis: action.clis };
     case 'capabilities': {

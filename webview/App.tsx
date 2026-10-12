@@ -126,6 +126,7 @@ export function App() {
         inert={inert}
         auth={state.authDismissed ? state.checks : null}
         starting={state.starting}
+        usage={state.usage}
         quick={quick}
         onQuick={setQuick}
         clis={state.clis}

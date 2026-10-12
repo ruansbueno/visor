@@ -97,6 +97,8 @@ export class RunStore {
         delete node.closedByRun;
         return;
       }
+      case 'usage':
+        return;
       case 'node_meta': {
         const node = this.nodes.get(e.nodeId);
         if (node) node.agentId = e.agentId;

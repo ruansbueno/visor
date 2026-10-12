@@ -84,6 +84,7 @@ export type HostMessage =
   | { type: 'cli'; check: CliCheck; /** de qual CLI é o diagnóstico (ausente = claude) */ cli?: CliId }
   | { type: 'prefs'; authBannerDismissed: boolean }
   | { type: 'starting'; count: number }
+  | { type: 'usage'; fiveHour?: number; sevenDay?: number; /** epoch em segundos */ fiveHourResetsAt?: number; sevenDayResetsAt?: number }
   | { type: 'clis'; clis: CliInfo[] }
   | { type: 'capabilities'; commands: SlashItem[]; defaultModel?: string }
   | { type: 'files'; requestId: string; files: AttachedFile[] }

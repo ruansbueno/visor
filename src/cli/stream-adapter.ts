@@ -65,6 +65,23 @@ export class StreamAdapter implements RunAdapter {
     } else if (m.type === 'system' && (m.subtype === 'task_started' || m.subtype === 'task_notification')) {
       out.push(...this.start(m.session_id, ts));
       out.push(...this.task(m, ts));
+    } else if (m.type === 'rate_limit_event') {
+      const w = m.rate_limit_info?.unifiedWindows;
+      const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+      const fiveHour = num(w?.five_hour?.utilization);
+      const sevenDay = num(w?.seven_day?.utilization);
+      const resets = num(w?.five_hour?.resetsAt);
+      const weekResets = num(w?.seven_day?.resetsAt);
+      if (fiveHour !== undefined || sevenDay !== undefined) {
+        out.push({
+          type: 'usage', runId: this.runId,
+          ...(fiveHour !== undefined ? { fiveHour } : {}),
+          ...(sevenDay !== undefined ? { sevenDay } : {}),
+          ...(resets !== undefined ? { fiveHourResetsAt: resets } : {}),
+          ...(weekResets !== undefined ? { sevenDayResetsAt: weekResets } : {}),
+          ts,
+        });
+      }
     } else if (m.type === 'assistant' || m.type === 'user') {
       out.push(...this.start(m.session_id, ts));
       out.push(...this.content(m, ts));
