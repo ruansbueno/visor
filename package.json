@@ -94,6 +94,17 @@
           "minimum": 0,
           "markdownDescription": "Avisa quando houver este número (ou mais) de conversas executando ao mesmo tempo, pelo gasto da assinatura e pelo risco de editarem os mesmos arquivos. `0` desliga o aviso. Não há limite máximo."
         },
+        "visor.debugLog": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Grava no canal de saída **Visor** os eventos detalhados de diagnóstico (tarefas em segundo plano, tamanho do snapshot). Início e fim de cada processo são sempre registrados. Nunca registra mensagens nem credenciais."
+        },
+        "visor.lingerTimeoutMinutes": {
+          "type": "number",
+          "default": 10,
+          "minimum": 0,
+          "markdownDescription": "Minutos que um processo pode ficar sem dar sinal depois de o agente terminar de responder (com tarefa em segundo plano pendente) antes de o Visor avisar que travou. `0` desliga o aviso. O Visor nunca encerra o processo sozinho."
+        },
         "visor.codexPath": {
           "type": "string",
           "default": "codex",

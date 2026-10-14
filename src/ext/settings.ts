@@ -13,6 +13,10 @@ export interface VisorSettings {
   disallowedTools: string[];
   /** Avisa a partir deste número de conversas executando ao mesmo tempo (0 desliga). */
   parallelWarningThreshold: number;
+  /** Log de diagnóstico detalhado no canal "Visor" (spawn/exit sempre vão; isto liga os eventos de debug). */
+  debugLog: boolean;
+  /** Minutos sem eventos, com o turno encerrado e o processo vivo, até avisar que travou (0 desliga). */
+  lingerTimeoutMinutes: number;
 }
 
 export const DEFAULT_SETTINGS: VisorSettings = {
@@ -23,6 +27,8 @@ export const DEFAULT_SETTINGS: VisorSettings = {
   allowedTools: [],
   disallowedTools: [],
   parallelWarningThreshold: 4,
+  debugLog: false,
+  lingerTimeoutMinutes: 10,
 };
 
 const list = (v: unknown): string[] =>
@@ -30,6 +36,9 @@ const list = (v: unknown): string[] =>
 
 const threshold = (v: unknown): number =>
   typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : DEFAULT_SETTINGS.parallelWarningThreshold;
+
+const minutes = (v: unknown): number =>
+  typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : DEFAULT_SETTINGS.lingerTimeoutMinutes;
 
 export function parseSettings(get: (key: string) => unknown): VisorSettings {
   const path = get('claudePath');
@@ -44,5 +53,7 @@ export function parseSettings(get: (key: string) => unknown): VisorSettings {
     allowedTools: list(get('allowedTools')),
     disallowedTools: list(get('disallowedTools')),
     parallelWarningThreshold: threshold(get('parallelWarningThreshold')),
+    debugLog: get('debugLog') === true,
+    lingerTimeoutMinutes: minutes(get('lingerTimeoutMinutes')),
   };
 }
