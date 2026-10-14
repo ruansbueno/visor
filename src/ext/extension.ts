@@ -12,7 +12,9 @@ import { startProcessRun } from '../cli/process-run';
 import { describeRejected, parseWebviewMessage, type HostMessage } from '../protocol';
 import { buildWebviewHtml, makeNonce } from './html';
 import { listProjectAgents } from './agents';
+import { createDiagLog } from './diag-log';
 import { checkAttachments } from './files';
+import { ProcessRegistry, nodeRegistryOs, signatureOf } from './process-registry';
 import { RunController } from './run-controller';
 import { DEFAULT_SETTINGS, parseSettings, type VisorSettings } from './settings';
 
@@ -51,6 +53,11 @@ export function activate(context: vscode.ExtensionContext): void {
     t.show();
     t.sendText(text, true);
   };
+
+  const diag = createDiagLog((line) => log.appendLine(line), () => readSettings().debugLog);
+  const registry = new ProcessRegistry(path.join(context.globalStorageUri.fsPath, 'processes.json'), nodeRegistryOs, process.pid);
+  // Processos de uma sessão anterior que caiu ou foi fechada à força (ficavam vivos até reiniciar a máquina).
+  diag.info('orphans', { killed: registry.reapOrphans() });
 
   const controller = new RunController({
     post: (msg: HostMessage) => {
@@ -130,7 +137,23 @@ export function activate(context: vscode.ExtensionContext): void {
         void context.globalState.update(AUTH_DISMISSED_KEY, true);
       },
     },
-    startRun: startProcessRun,
+    startRun: (runId, opts, onEvent) => {
+      const run = startProcessRun(runId, opts, onEvent);
+      const pid = run.pid;
+      const t0 = Date.now();
+      if (pid !== undefined) registry.add({ pid, startedAt: t0, signature: signatureOf(opts.args) });
+      diag.info('spawn', { runId: runId.slice(0, 8), pid, cli: opts.adapter ?? 'claude', resume: !!opts.resume, live: registry.size });
+      void run.done.then((r) => {
+        if (pid !== undefined) registry.remove(pid);
+        diag.info('exit', {
+          runId: runId.slice(0, 8), pid, code: r.exitCode ?? undefined, signal: r.signal ?? undefined,
+          ms: Date.now() - t0, cancelled: r.cancelled, live: registry.size,
+          ...(r.exitCode !== 0 && r.stderrTail ? { stderr: r.stderrTail.trim().slice(-300) } : {}),
+        });
+      });
+      return run;
+    },
+    log: diag,
   });
 
   const openCanvas = () => {

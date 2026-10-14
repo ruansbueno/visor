@@ -235,17 +235,18 @@ export class RunController {
     }
   }
 
-  /** Cancela todas as conversas ativas (e inícios ainda em andamento). */
-  cancelAll(): void {
+  /** Cancela todas as conversas ativas (e inícios ainda em andamento). `immediate`: sem esperar o SIGTERM (fechamento). */
+  cancelAll(immediate = false): void {
     for (const token of this.pendingStarts) token.cancelled = true;
-    for (const id of this.chats.keys()) this.cancelChat(id);
+    for (const id of this.chats.keys()) this.cancelChat(id, immediate);
   }
 
   dispose(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     for (const chat of this.chats.values()) clearTimeout(chat.stallTimer);
-    this.cancelAll();
+    // O host pode encerrar antes de um timer de SIGKILL disparar: mata na hora.
+    this.cancelAll(true);
   }
 
   // ---------- mensagens ao host/Webview ----------
@@ -315,11 +316,13 @@ export class RunController {
 
   // ---------- ações ----------
 
-  private cancelChat(runId: string): void {
+  private cancelChat(runId: string, immediate = false): void {
     const chat = this.chats.get(runId);
     if (!chat) return;
-    if (chat.active) chat.active.cancel();
-    else if (chat.busy) chat.cancelRequested = true;
+    if (chat.active) {
+      if (immediate) chat.active.cancel({ immediate: true });
+      else chat.active.cancel();
+    } else if (chat.busy) chat.cancelRequested = true;
   }
 
   /** Decisão da pessoa sobre um pedido de permissão do Claude: vira o control_response no stdin do processo. */

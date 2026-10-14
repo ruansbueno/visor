@@ -1730,3 +1730,23 @@ describe('RunController: login perdido no meio da sessão', () => {
     expect(lines.some((l) => l.startsWith('result ') && l.includes('"bg":true') && l.includes('"question":true'))).toBe(true);
   });
 });
+
+describe('RunController: fechamento', () => {
+  it('dispose encerra os processos na hora (immediate)', async () => {
+    const t = setup();
+    const p = (await startChat(t)).done;
+    t.c.dispose();
+    expect(t.runs[0]!.cancel).toHaveBeenCalledWith({ immediate: true });
+    t.runs[0]!.finish(result({ cancelled: true }));
+    await p;
+  });
+
+  it('cancelar pela tela continua com a espera do SIGTERM (sem immediate)', async () => {
+    const t = setup();
+    const p = (await startChat(t)).done;
+    await t.c.handle({ type: 'cancel', runId: t.runs[0]!.runId });
+    expect(t.runs[0]!.cancel).toHaveBeenCalledWith();
+    t.runs[0]!.finish(result({ cancelled: true }));
+    await p;
+  });
+});
