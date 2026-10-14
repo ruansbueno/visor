@@ -1,9 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { RunController, type ControllerDeps } from '../../src/ext/run-controller';
 import { DEFAULT_SETTINGS, type VisorSettings } from '../../src/ext/settings';
 import type { HostMessage, RunView } from '../../src/protocol';
 import type { NormalizedEvent, Question } from '../../src/core/schema';
-import type { ProcessRunOptions, ProcessRunResult } from '../../src/cli/process-run';
+import { startProcessRun, type ProcessRunOptions, type ProcessRunResult } from '../../src/cli/process-run';
 import type { CliCheck } from '../../src/cli/detect';
 
 const OK: CliCheck = { state: 'ok', version: '2.1.267', authMethod: 'claude.ai' };
@@ -1749,4 +1752,74 @@ describe('RunController: fechamento', () => {
     t.runs[0]!.finish(result({ cancelled: true }));
     await p;
   });
+});
+
+describe('RunController: estresse', () => {
+  it('5 chats × 200 perguntas com o processo vivo: nada perdido, nada preso, um processo por chat; auth_lost isolado', async () => {
+    const t = setup({}, { lingerTimeoutMinutes: 0 });
+    const chats: { run: FakeRun; done: Promise<void> }[] = [];
+    for (let i = 0; i < 5; i++) {
+      const done = t.c.handle({ type: 'start', prompt: `chat ${i}` });
+      await t.tick();
+      const run = t.runs.at(-1)!;
+      run.hasBackgroundTasks.mockReturnValue(true);
+      run.emit(init(run.runId));
+      chats.push({ run, done });
+    }
+    for (let turn = 0; turn < 200; turn++) {
+      // O chat 0 perde o login no meio: os outros seguem sem perceber.
+      if (turn === 100) chats[0]!.run.emit({ type: 'auth_lost', runId: chats[0]!.run.runId, ts: 1 });
+      const active = turn < 100 ? chats : chats.slice(1);
+      for (const { run } of active) run.emit(finishedWithQuestion(run.runId, Q));
+      await t.tick(8);
+      for (const { run } of active) {
+        const v = t.view(run.runId);
+        expect(v.status).toBe('waiting');
+        expect(v.busy).toBe(false);
+        await t.c.handle({ type: 'send', nodeId: `${run.runId}:root`, text: `r${turn}` });
+      }
+    }
+    expect(t.startRun).toHaveBeenCalledTimes(5);
+    expect(chats[0]!.run.sendUserMessage).toHaveBeenCalledTimes(100);
+    for (const { run } of chats.slice(1)) expect(run.sendUserMessage).toHaveBeenCalledTimes(200);
+    const a = acks(t);
+    expect(a).toHaveLength(100 + 4 * 200);
+    expect(a.every((x) => x.ok)).toBe(true);
+    for (const { run, done } of chats) {
+      run.finish();
+      await done;
+    }
+    expect(t.snaps().at(-1)!.runs.every((r) => !r.busy && !r.lingering)).toBe(true);
+  }, 30_000);
+
+  it.skipIf(process.platform === 'win32')('5 processos reais vivos (ignorando SIGTERM): dispose não deixa nenhum vivo', async () => {
+    const fake = path.resolve('fixtures/fake-claude.mjs');
+    const f = path.join(mkdtempSync(path.join(os.tmpdir(), 'visor-stress-')), 'hang.ndjson');
+    writeFileSync(f, JSON.stringify({ type: 'system', subtype: 'init', session_id: 's1' }) + '\n');
+    const pids: number[] = [];
+    const t = setup({
+      startRun: (runId, _opts, on) => {
+        const run = startProcessRun(runId, { command: process.execPath, args: [fake, f, '--hang', '--ignore-sigterm'], cwd: process.cwd() }, on);
+        if (run.pid) pids.push(run.pid);
+        return run;
+      },
+    });
+    const dones: Promise<void>[] = [];
+    for (let i = 0; i < 5; i++) {
+      dones.push(t.c.handle({ type: 'start', prompt: `c${i}` }));
+      await t.tick(50);
+    }
+    expect(pids).toHaveLength(5);
+    t.c.dispose();
+    await Promise.all(dones);
+    const alive = pids.filter((pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    expect(alive).toEqual([]);
+  }, 15_000);
 });
