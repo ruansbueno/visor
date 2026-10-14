@@ -1365,3 +1365,60 @@ it('duplo clique não aprova o pedido seguinte: os botões ficam travados logo a
     vi.useRealTimers();
   }
 });
+
+const Qv = { text: 'Qual cor?', options: ['Azul', 'Verde'], source: 'marker' as const };
+const options = (runId: string) => [...card(runId).querySelectorAll('.question-card button.option')] as HTMLButtonElement[];
+const sends = () => posted.filter((m) => m.type === 'send');
+
+it('pergunta com o processo vivo: opção habilitada; o clique envia e mostra "enviando…"', async () => {
+  const root = await mount();
+  await send({ type: 'snapshot', runs: [{ ...chat('r', 'P', 'waiting', { question: Qv }), lingering: true }] });
+  expect(options('r').every((b) => !b.disabled)).toBe(true);
+  await click(options('r')[0]!);
+  expect(sends().at(-1)).toMatchObject({ type: 'send', nodeId: 'r:root', text: 'Azul' });
+  expect(options('r').every((b) => b.disabled)).toBe(true);
+  expect(card('r').textContent).toContain('enviando…');
+  await unmount(root);
+});
+
+it('answer_ack com falha mostra "Tentar de novo", que reenvia a mesma opção', async () => {
+  const root = await mount();
+  await send({ type: 'snapshot', runs: [{ ...chat('r', 'P', 'waiting', { question: Qv }), lingering: true }] });
+  await click(options('r')[1]!);
+  const before = sends().length;
+  await send({ type: 'answer_ack', nodeId: 'r:root', ok: false });
+  const retry = [...card('r').querySelectorAll('button')].find((b) => b.textContent === 'Tentar de novo')!;
+  expect(retry).toBeTruthy();
+  await click(retry);
+  expect(sends()).toHaveLength(before + 1);
+  expect(sends().at(-1)).toMatchObject({ nodeId: 'r:root', text: 'Verde' });
+  await unmount(root);
+});
+
+it('turno rodando de verdade: opções desabilitadas com o motivo', async () => {
+  const root = await mount();
+  await send({ type: 'snapshot', runs: [chat('r', 'P', 'waiting', { question: Qv }, true)] });
+  expect(options('r').every((b) => b.disabled)).toBe(true);
+  expect(card('r').querySelector('.question-hint')!.textContent).toContain('Aguardando o agente terminar');
+  await unmount(root);
+});
+
+it('processo parado: "Encerrar processo" cancela e "Continuar esperando" envia keepWaiting', async () => {
+  const root = await mount();
+  await send({ type: 'snapshot', runs: [{ ...chat('r', 'P', 'waiting', { question: Qv }), lingering: true, stalled: true }] });
+  const stall = card('r').querySelector('.stall-card')!;
+  expect(stall.textContent).toContain('tarefa em segundo plano');
+  await click([...stall.querySelectorAll('button')].find((b) => b.textContent === 'Encerrar processo')!);
+  expect(posted).toContainEqual({ type: 'cancel', runId: 'r' });
+  await click([...stall.querySelectorAll('button')].find((b) => b.textContent === 'Continuar esperando')!);
+  expect(posted).toContainEqual({ type: 'keepWaiting', runId: 'r' });
+  await unmount(root);
+});
+
+it('processo vivo: o cartão mostra cancelar e não mostra remover', async () => {
+  const root = await mount();
+  await send({ type: 'snapshot', runs: [{ ...chat('r', 'P', 'waiting', { question: Qv }), lingering: true }] });
+  expect(byLabel('Cancelar conversa', card('r'))).toBeTruthy();
+  expect(byLabel('Remover conversa', card('r'))).toBeNull();
+  await unmount(root);
+});

@@ -85,9 +85,11 @@ export function App() {
       onSend: (nodeId, text, attachments) => send({ type: 'send', nodeId, text, ...(attachments.length ? { attachments } : {}) }),
       onPermission: (runId, requestId, decision) => send({ type: 'permission', runId, requestId, decision }),
       onOptions: (runId, options) => send({ type: 'setOptions', runId, options: options ?? {} }),
+      onKeepWaiting: (runId) => send({ type: 'keepWaiting', runId }),
+      answerFailures: (nodeId) => state.answerFailed[nodeId] ?? 0,
       models: (cli) => state.clis.find((c) => c.id === cli)?.models,
     }),
-    [openNewAgent, state.clis],
+    [openNewAgent, state.clis, state.answerFailed],
   );
 
   const cancelPending = useCallback(() => send({ type: 'cancelPending' }), []);

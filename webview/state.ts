@@ -31,6 +31,8 @@ export interface ViewState {
   layout: Record<string, NodeBox>;
   inspectedId: string | null;
   log: { nodeId: string; events: EventView[]; total: number } | null;
+  /** quantas vezes a resposta de cada node não foi entregue (o card da pergunta oferece "Tentar de novo") */
+  answerFailed: Record<string, number>;
 }
 export type Action =
   | HostMessage
@@ -39,7 +41,7 @@ export type Action =
   | { type: 'moved'; nodeId: string; box: NodeBox }
   | { type: 'files_consumed' };
 
-export const initialState: ViewState = { checks: {}, runs: [], notices: [], nextNoticeId: 1, authDismissed: false, starting: 0, usage: null, agents: [], clis: [], caps: { commands: [] }, picked: null, chatLogs: {}, layout: {}, inspectedId: null, log: null };
+export const initialState: ViewState = { checks: {}, runs: [], notices: [], nextNoticeId: 1, authDismissed: false, starting: 0, usage: null, agents: [], clis: [], caps: { commands: [] }, picked: null, chatLogs: {}, layout: {}, inspectedId: null, log: null, answerFailed: {} };
 const MAX_NOTICES = 5;
 
 /** Mantém a referência anterior de cada run cujo conteúdo não mudou (evita re-render em cascata). */
@@ -111,7 +113,7 @@ export function reduce(state: ViewState, action: Action): ViewState {
       return { ...state, notices: [...state.notices, notice].slice(-MAX_NOTICES), nextNoticeId: state.nextNoticeId + 1 };
     }
     case 'answer_ack':
-      return state;
+      return action.ok ? state : { ...state, answerFailed: { ...state.answerFailed, [action.nodeId]: (state.answerFailed[action.nodeId] ?? 0) + 1 } };
     case 'dismiss':
       return { ...state, notices: state.notices.filter((n) => n.id !== action.id) };
   }

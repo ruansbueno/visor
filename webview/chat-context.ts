@@ -10,11 +10,15 @@ export interface ChatCtx {
   onSend(nodeId: string, text: string, attachments: string[]): void;
   onPermission(runId: string, requestId: string, decision: 'allow' | 'allow_always' | 'deny'): void;
   onOptions(runId: string, options: ChatOptions | undefined): void;
+  onKeepWaiting(runId: string): void;
+  /** quantas respostas deste node falharam (muda = mostrar "Tentar de novo") */
+  answerFailures(nodeId: string): number;
   /** modelos que a CLI informa (vazio = aliases fixos) */
   models(cli: string): ModelInfo[] | undefined;
 }
 
 const noop = () => {};
 export const ChatContext = createContext<ChatCtx>({
-  onRename: noop, onCancel: noop, onMarkDone: noop, onRemove: noop, onAddAgent: noop, onSend: noop, onPermission: noop, onOptions: noop, models: () => undefined,
+  onRename: noop, onCancel: noop, onMarkDone: noop, onRemove: noop, onAddAgent: noop, onSend: noop, onPermission: noop, onOptions: noop,
+  onKeepWaiting: noop, answerFailures: () => 0, models: () => undefined,
 });

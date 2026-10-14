@@ -15,6 +15,10 @@ export interface ChatNodeData {
   title: string;
   status: NodeStatus;
   busy: boolean;
+  /** turno encerrado com o processo vivo: dá para responder */
+  lingering?: boolean;
+  /** watchdog: o processo vivo ficou parado */
+  stalled?: boolean;
   question?: Question;
   /** pedido de permissão mais antigo ainda pendente (o card mostra um por vez) */
   permission?: PermissionPrompt;
@@ -69,6 +73,8 @@ export function toFlow(runs: RunView[], boxes: Record<string, NodeBox>) {
           dragHandle: '.chat-drag',
           data: {
             runId: run.id, rootId: n.id, title: run.title || 'Chat', status: n.status, busy: run.busy,
+            ...(run.lingering ? { lingering: true } : {}),
+            ...(run.stalled ? { stalled: true } : {}),
             ...(n.question ? { question: n.question } : {}),
             ...(n.permissions?.length ? { permission: n.permissions[0], permissionCount: n.permissions.length } : {}),
             ...(run.options ? { options: run.options } : {}),

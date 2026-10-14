@@ -16,7 +16,7 @@ export const ChatCard = memo(function ChatCard({ data, selected }: NodeProps) {
   const ctx = useContext(ChatContext);
   const log = d.log;
   const running = d.status === 'running' || d.status === 'pending';
-  const idle = !running && !d.busy;
+  const idle = !running && !d.busy && !d.lingering;
   const waiting = d.status === 'waiting' && !!d.question;
   const pills = summarizeOptions(d.options);
   const isCodex = pills.cli === 'codex';
@@ -84,7 +84,7 @@ export const ChatCard = memo(function ChatCard({ data, selected }: NodeProps) {
           {!isCodex && (
             <button className="secondary small" aria-label="Chamar agente neste chat" title="Chamar agente neste chat" onClick={() => ctx.onAddAgent(d.runId)}>+ agente</button>
           )}
-          {(running || d.busy) && <button className="secondary small" aria-label="Cancelar conversa" title="Cancelar esta conversa" onClick={() => ctx.onCancel(d.runId)}>✕</button>}
+          {(running || d.busy || d.lingering) && <button className="secondary small" aria-label="Cancelar conversa" title="Cancelar esta conversa" onClick={() => ctx.onCancel(d.runId)}>✕</button>}
           {d.status === 'waiting' && !d.busy && <button className="secondary small" onClick={() => ctx.onMarkDone(d.runId)}>Marcar como concluído</button>}
           {idle && <button className="secondary small" aria-label="Remover conversa" title="Remover esta conversa do canvas" onClick={() => ctx.onRemove(d.runId)}>Remover</button>}
         </div>
@@ -98,7 +98,16 @@ export const ChatCard = memo(function ChatCard({ data, selected }: NodeProps) {
         }}
       >
         <LogList events={log?.events ?? null} total={log?.total ?? 0} userLabel="Você" />
-        {waiting && d.question && <QuestionCard question={d.question} canSend={!d.busy} onAnswer={(text) => ctx.onSend(d.rootId, text, [])} />}
+        {waiting && d.question && <QuestionCard question={d.question} canSend={!d.busy} failures={ctx.answerFailures(d.rootId)} onAnswer={(text) => ctx.onSend(d.rootId, text, [])} />}
+        {d.stalled && (
+          <div className="question-card stall-card" role="alert">
+            <div className="question-title">O agente terminou de responder, mas uma tarefa em segundo plano não terminou.</div>
+            <div className="question-options">
+              <button className="option" onClick={() => ctx.onCancel(d.runId)}>Encerrar processo</button>
+              <button className="option" onClick={() => ctx.onKeepWaiting(d.runId)}>Continuar esperando</button>
+            </div>
+          </div>
+        )}
         {d.permission && (
           <PermissionCard prompt={d.permission} more={(d.permissionCount ?? 1) - 1} onAnswer={(choice) => ctx.onPermission(d.runId, d.permission!.requestId, choice)} />
         )}

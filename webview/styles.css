@@ -238,3 +238,7 @@ textarea { resize: none; }
 .permission-card { border: 1px solid var(--waiting); border-left-width: 4px; border-radius: 6px; padding: 10px 12px; background: var(--card); }
 .permission-summary { margin: 6px 0; padding: 6px 8px; max-height: 140px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 4px; background: var(--vscode-textCodeBlock-background, #8882); font-family: var(--vscode-editor-font-family, monospace); font-size: .9em; user-select: text; }
 .permission-card .question-options button.option.deny:hover:not(:disabled) { background: var(--error); color: #fff; }
+
+.question-card .option.is-sending { opacity: 0.8; font-style: italic; }
+.question-failed { color: var(--vscode-errorForeground); }
+.stall-card { border-color: var(--vscode-editorWarning-foreground); }
