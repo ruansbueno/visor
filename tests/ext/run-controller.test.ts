@@ -1645,3 +1645,88 @@ describe('RunController: watchdog do processo parado', () => {
     expect(lines).toContain('stall');
   });
 });
+
+describe('RunController: login perdido no meio da sessão', () => {
+  const authLost = (runId: string): NormalizedEvent => ({ type: 'auth_lost', runId, ts: 2 });
+  const clis = (t: T) => t.posted.filter((m) => m.type === 'cli') as Extract<HostMessage, { type: 'cli' }>[];
+
+  it('auth_lost mostra o banner de login e avisa no chat', async () => {
+    const detect = vi.fn(async (): Promise<CliCheck> => OK);
+    const t = setup({ detect });
+    const p = (await startChat(t)).done;
+    const run = t.runs[0]!;
+    detect.mockResolvedValueOnce({ state: 'not_authenticated', version: '2.1.287', message: 'login' });
+    run.emit(init(run.runId));
+    run.emit(authLost(run.runId));
+    await t.tick();
+    expect(clis(t).some((m) => m.check.state === 'not_authenticated')).toBe(true);
+    expect(t.notices().some((n) => n.level === 'error' && n.text.includes('Not logged in'))).toBe(true);
+    run.finish();
+    await p;
+  });
+
+  it('se o CLI diz que o login está ok, o banner some e pede para enviar de novo', async () => {
+    const t = setup();
+    const p = (await startChat(t)).done;
+    const run = t.runs[0]!;
+    run.emit(init(run.runId));
+    run.emit(authLost(run.runId));
+    await t.tick();
+    expect(clis(t).at(-1)!.check.state).toBe('ok');
+    expect(t.notices().some((n) => n.text.includes('login do CLI está ok'))).toBe(true);
+    run.finish();
+    await p;
+  });
+
+  it('vários auth_lost ao mesmo tempo fazem uma só reverificação', async () => {
+    const detect = vi.fn(async (): Promise<CliCheck> => OK);
+    const t = setup({ detect });
+    const a = (await startChat(t)).done;
+    const b = (await startChat(t)).done;
+    const before = detect.mock.calls.length;
+    for (const run of t.runs) run.emit(authLost(run.runId));
+    await t.tick();
+    expect(detect.mock.calls.length - before).toBe(1);
+    for (const run of t.runs) run.finish();
+    await Promise.all([a, b]);
+  });
+
+  it('depois de auth_lost, a resposta não vai pelo stdin do processo quebrado', async () => {
+    const t = setup();
+    const { run, runId } = await lingeringChat(t);
+    run.emit(authLost(runId));
+    await t.tick();
+    const p = t.c.handle({ type: 'send', nodeId: `${runId}:root`, text: 'Azul' });
+    await t.tick();
+    expect(run.sendUserMessage).not.toHaveBeenCalled();
+    run.finish(result({ cancelled: true }));
+    await t.tick();
+    expect(t.startRun).toHaveBeenCalledTimes(2);
+    t.runs[1]!.finish();
+    await p;
+  });
+
+  it('turno que terminou em erro faz o próximo turno reverificar o CLI', async () => {
+    const detect = vi.fn(async (): Promise<CliCheck> => OK);
+    const t = setup({ detect });
+    const p = (await startChat(t)).done;
+    const run = t.runs[0]!;
+    run.emit(init(run.runId));
+    run.emit({ type: 'run_finished', runId: run.runId, status: 'error', ts: 3 });
+    run.finish(result({ exitCode: 1 }));
+    await p;
+    const before = detect.mock.calls.length;
+    const p2 = t.c.handle({ type: 'send', nodeId: `${run.runId}:root`, text: 'de novo' });
+    await t.tick();
+    expect(detect.mock.calls.length).toBe(before + 1);
+    t.runs[1]!.finish();
+    await p2;
+  });
+
+  it('registra o result com a flag de tarefas em segundo plano', async () => {
+    const lines: string[] = [];
+    const t = setup({ log: { info: (e, f) => lines.push(`${e} ${JSON.stringify(f)}`), debug: () => {}, debugEnabled: () => false } });
+    await lingeringChat(t);
+    expect(lines.some((l) => l.startsWith('result ') && l.includes('"bg":true') && l.includes('"question":true'))).toBe(true);
+  });
+});

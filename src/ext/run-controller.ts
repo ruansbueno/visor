@@ -71,6 +71,8 @@ interface Chat {
   /** watchdog: com o turno encerrado, o processo vivo ficou sem dar sinal */
   stalled?: boolean;
   stallTimer?: NodeJS.Timeout;
+  /** o processo ativo respondeu "sem login": a próxima mensagem vai para um processo novo */
+  authLost?: boolean;
 }
 
 interface Turn {
@@ -129,6 +131,8 @@ export class RunController {
   private startingCount = 0;
   private caps?: { at: number; cwd: string; value: Capabilities };
   private readonly capsInflight = new Map<string, Promise<Capabilities | undefined>>();
+  /** reverificação do login em voo (vários chats perdendo o login ao mesmo tempo dividem uma só) */
+  private authRecheck?: Promise<void>;
   /** caminhos que o seletor de arquivos devolveu: só estes podem ser anexados (a Webview não escolhe sozinha) */
   private readonly pickedPaths = new Set<string>();
   /** imagens coladas que o próprio Visor gravou: ficam fora do projeto de propósito, então não avisamos */
@@ -257,7 +261,12 @@ export class RunController {
   }
 
   private postSnapshot(forceLog = false): void {
-    this.deps.post({ type: 'snapshot', runs: [...this.chats.values()].map((c) => toRunView(c.store, c.busy && !c.turnOver, { lingering: c.busy && c.turnOver, stalled: !!c.stalled })) });
+    const t0 = Date.now();
+    const runs = [...this.chats.values()].map((c) => toRunView(c.store, c.busy && !c.turnOver, { lingering: c.busy && c.turnOver, stalled: !!c.stalled }));
+    this.deps.post({ type: 'snapshot', runs });
+    if (this.log.debugEnabled()) {
+      this.log.debug('snapshot', { chats: runs.length, bytes: JSON.stringify(runs).length, ms: Date.now() - t0 });
+    }
     // O cartão de cada chat mostra a conversa ao vivo: reenvia só os chats que mudaram (ou todos, se pedido).
     for (const [id, chat] of this.chats) if (forceLog || this.dirty.has(id)) this.postChatLog(chat, forceLog);
     // O log do node inspecionado só é reenviado se o chat dele mudou (ou se foi pedido).
@@ -477,6 +486,30 @@ export class RunController {
     const why = check.state === 'not_installed' ? `o ${name} não foi encontrado` : `o ${name} não está autenticado`;
     this.notice('error', `Mensagem não enviada: ${why}. Use os botões do aviso no topo (Fazer login / Verificar de novo) e envie de novo.`, chat);
     return true;
+  }
+
+  /** O CLI respondeu "Not logged in" (ou 401) neste processo: banner de login, aviso no chat e uma reverificação. */
+  private onAuthLost(chat: Chat): void {
+    chat.authLost = true;
+    this.log.info('auth_lost', { runId: chat.store.run.id.slice(0, 8), pid: chat.active?.pid });
+    const prev = this.lastChecks.get('claude');
+    const check: CliCheck = {
+      state: 'not_authenticated',
+      version: prev && 'version' in prev ? prev.version : '',
+      message: 'O Claude Code perdeu o login neste processo (o terminal pode continuar logado). Clique em Verificar de novo; se continuar, faça login.',
+    };
+    this.lastChecks.set('claude', check);
+    this.deps.post({ type: 'cli', check, cli: 'claude' });
+    this.notice('error', 'O Claude Code respondeu "Not logged in". Use o aviso no topo: Verificar de novo / Fazer login.', chat);
+    if (this.authRecheck) return;
+    this.authRecheck = this.checkCli('claude')
+      .then((c) => {
+        this.deps.post({ type: 'cli', check: c, cli: 'claude' });
+        if (c.state === 'ok') this.notice('info', 'Claude Code: o login do CLI está ok. Envie a mensagem de novo (o próximo turno usa um processo novo).');
+      }, () => undefined)
+      .finally(() => {
+        this.authRecheck = undefined;
+      });
   }
 
   /** Reconfere só os CLIs que estavam com problema (ex.: a pessoa fez login no terminal e voltou ao painel). */
@@ -741,7 +774,7 @@ export class RunController {
     const active = chat.active!;
     const sameOptions = chat.activeOptions === JSON.stringify(store.run.options ?? {});
     const newRules = outsideFiles(t.attachments ?? [], store.run.cwd).length > 0;
-    if (sameOptions && !newRules && active.sendUserMessage(t.prompt)) {
+    if (sameOptions && !newRules && !chat.authLost && active.sendUserMessage(t.prompt)) {
       this.applyEcho(store, t);
       store.apply({ type: 'run_resumed', runId: store.run.id, ts: Date.now() });
       chat.turnOver = false;
@@ -857,6 +890,7 @@ export class RunController {
         });
       }
       chat.turnOver = false;
+      chat.authLost = false;
       chat.activeOptions = JSON.stringify(options ?? {});
       const run: ProcessRun = this.deps.startRun(
         store.run.id,
@@ -870,6 +904,13 @@ export class RunController {
           if (e.type === 'usage') {
             this.deps.post({ type: 'usage', ...(e.fiveHour !== undefined ? { fiveHour: e.fiveHour } : {}), ...(e.sevenDay !== undefined ? { sevenDay: e.sevenDay } : {}), ...(e.fiveHourResetsAt !== undefined ? { fiveHourResetsAt: e.fiveHourResetsAt } : {}), ...(e.sevenDayResetsAt !== undefined ? { sevenDayResetsAt: e.sevenDayResetsAt } : {}) });
             return;
+          }
+          if (e.type === 'auth_lost') {
+            this.onAuthLost(chat);
+            return;
+          }
+          if (e.type === 'run_finished' && chat.active === run) {
+            this.log.info('result', { runId: store.run.id.slice(0, 8), pid: run.pid, status: e.status, bg: run.hasBackgroundTasks(), question: !!e.question });
           }
           if (e.type === 'permission_request') chat.pending.set(e.requestId, e);
           // Só o processo atual decide se o turno acabou (um processo antigo, sendo trocado, não conta).
@@ -904,6 +945,8 @@ export class RunController {
         const reason = lastErrorEvent(store) ?? result.stderrTail.trim().slice(-500);
         this.notice('error', `A execução terminou com erro (código ${result.exitCode}).${reason ? ` ${reason}` : ''}`, chat);
       }
+      // Turno com erro: o próximo reconfere o CLI (o login pode ter caído no meio).
+      if (store.run.status === 'error') this.lastChecks.delete(cli);
     } catch (err) {
       ack(false);
       chat.active = undefined;
