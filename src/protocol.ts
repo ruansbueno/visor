@@ -118,6 +118,8 @@ export type WebviewMessage =
   | { type: 'setOptions'; runId: string; options: ChatOptions }
   | { type: 'pickFiles'; requestId: string }
   | { type: 'permission'; runId: string; requestId: string; decision: 'allow' | 'allow_always' | 'deny' }
+  /** o watchdog avisou que o processo parou; a pessoa prefere esperar mais */
+  | { type: 'keepWaiting'; runId: string }
   /** imagem colada no campo (Cmd/Ctrl+V): o host grava num arquivo temporário e devolve como anexo */
   | { type: 'pasteImage'; requestId: string; mime: string; data: string }
   | { type: 'listClis' }
@@ -208,6 +210,8 @@ export function parseWebviewMessage(raw: unknown): WebviewMessage | null {
         : null;
     case 'markDone':
       return validNodeId(m.runId) ? { type: 'markDone', runId: m.runId } : null;
+    case 'keepWaiting':
+      return validNodeId(m.runId) ? { type: 'keepWaiting', runId: m.runId } : null;
     case 'removeChat':
       return validNodeId(m.runId) ? { type: 'removeChat', runId: m.runId } : null;
     case 'cancelPending':

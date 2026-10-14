@@ -1580,3 +1580,68 @@ describe('RunController: processo vivo depois do fim do turno', () => {
     expect(t.view(runId).status).toBe('done');
   });
 });
+
+describe('RunController: watchdog do processo parado', () => {
+  const FAST = { lingerTimeoutMinutes: 0.001 }; // 60 ms
+
+  it('sem eventos depois do fim do turno, marca stalled', async () => {
+    const t = setup({}, FAST);
+    const { runId } = await lingeringChat(t);
+    await t.tick(120);
+    expect(t.view(runId).stalled).toBe(true);
+  });
+
+  it('evento novo do processo adia o aviso', async () => {
+    const t = setup({}, FAST);
+    const { run, runId } = await lingeringChat(t);
+    await t.tick(30);
+    run.emit(msg(runId, 'ainda aqui'));
+    await t.tick(30);
+    run.emit(msg(runId, 'ainda aqui 2'));
+    await t.tick(30);
+    expect(t.view(runId).stalled).toBeUndefined();
+  });
+
+  it('keepWaiting limpa o aviso e rearma', async () => {
+    const t = setup({}, FAST);
+    const { runId } = await lingeringChat(t);
+    await t.tick(120);
+    await t.c.handle({ type: 'keepWaiting', runId });
+    await t.tick(10);
+    expect(t.view(runId).stalled).toBeUndefined();
+    await t.tick(120);
+    expect(t.view(runId).stalled).toBe(true);
+  });
+
+  it('com permissão pendente não marca stalled (o processo espera a pessoa)', async () => {
+    const t = setup({}, FAST);
+    const { run, runId } = await lingeringChat(t);
+    run.emit({ type: 'permission_request', runId, nodeId: `${runId}:root`, requestId: 'q1', tool: 'Bash', input: {}, suggestions: [], ts: 9 });
+    await t.tick(120);
+    expect(t.view(runId).stalled).toBeUndefined();
+  });
+
+  it('lingerTimeoutMinutes 0 desliga', async () => {
+    const t = setup({}, { lingerTimeoutMinutes: 0 });
+    const { runId } = await lingeringChat(t);
+    await t.tick(120);
+    expect(t.view(runId).stalled).toBeUndefined();
+  });
+
+  it('quando o processo sai, o aviso some', async () => {
+    const t = setup({}, FAST);
+    const { run, runId, done } = await lingeringChat(t);
+    await t.tick(120);
+    run.finish();
+    await done;
+    expect(t.view(runId).stalled).toBeUndefined();
+  });
+
+  it('registra stall no log', async () => {
+    const lines: string[] = [];
+    const t = setup({ log: { info: (e) => lines.push(e), debug: () => {}, debugEnabled: () => false } }, FAST);
+    await lingeringChat(t);
+    await t.tick(120);
+    expect(lines).toContain('stall');
+  });
+});

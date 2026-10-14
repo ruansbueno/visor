@@ -86,6 +86,12 @@ describe('parseWebviewMessage', () => {
     }
   });
 
+  it('keepWaiting exige runId válido', () => {
+    expect(parseWebviewMessage({ type: 'keepWaiting', runId: 'r1' })).toEqual({ type: 'keepWaiting', runId: 'r1' });
+    expect(parseWebviewMessage({ type: 'keepWaiting' })).toBeNull();
+    expect(parseWebviewMessage({ type: 'keepWaiting', runId: '' })).toBeNull();
+  });
+
   it('spawn aceita runId (string) ou ausente/null para criar um chat novo', () => {
     expect(parseWebviewMessage({ type: 'spawn', agentType: 'a', task: 't', runId: 'r1' })).toEqual({ type: 'spawn', agentType: 'a', task: 't', runId: 'r1' });
     expect(parseWebviewMessage({ type: 'spawn', agentType: 'a', task: 't', runId: null })).toEqual({ type: 'spawn', agentType: 'a', task: 't', runId: null });

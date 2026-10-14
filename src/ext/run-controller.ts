@@ -16,6 +16,7 @@ import { alwaysSuggestion } from '../core/permission';
 import { userMessageLine, type PermissionDecision } from '../cli/claude-input';
 import type { AgentInfo, AttachedFile, CliInfo, HostMessage, NodeBox, WebviewMessage } from '../protocol';
 import { mergeAgents } from './agents';
+import { NO_LOG, type DiagLog } from './diag-log';
 import { isSensitivePath, readRule } from './files';
 import type { VisorSettings } from './settings';
 
@@ -47,6 +48,8 @@ export interface ControllerDeps {
   startRun(runId: string, opts: ProcessRunOptions, onEvent: (e: NormalizedEvent) => void): ProcessRun;
   flushMs?: number;
   newRunId?(): string;
+  /** log de diagnóstico (canal "Visor"); ausente nos testes que não o verificam */
+  log?: DiagLog;
 }
 
 /** Uma conversa independente: um run (sessão do Claude) com seu grafo e seu processo. */
@@ -65,6 +68,9 @@ interface Chat {
   turn?: Promise<void>;
   /** o processo ativo está sendo trocado por outro: o cancelamento não é da pessoa, então sem aviso */
   replacing?: boolean;
+  /** watchdog: com o turno encerrado, o processo vivo ficou sem dar sinal */
+  stalled?: boolean;
+  stallTimer?: NodeJS.Timeout;
 }
 
 interface Turn {
@@ -136,6 +142,10 @@ export class RunController {
 
   constructor(private readonly deps: ControllerDeps) {}
 
+  private get log(): DiagLog {
+    return this.deps.log ?? NO_LOG;
+  }
+
   async handle(msg: WebviewMessage): Promise<void> {
     switch (msg.type) {
       case 'ready':
@@ -188,6 +198,14 @@ export class RunController {
       case 'markDone':
         this.markDone(msg.runId);
         return;
+      case 'keepWaiting': {
+        const chat = this.chats.get(msg.runId);
+        if (!chat) return;
+        this.clearStall(chat);
+        this.armStall(chat);
+        this.flush();
+        return;
+      }
       case 'removeChat':
         this.removeChat(msg.runId);
         return;
@@ -222,6 +240,7 @@ export class RunController {
   dispose(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
+    for (const chat of this.chats.values()) clearTimeout(chat.stallTimer);
     this.cancelAll();
   }
 
@@ -238,7 +257,7 @@ export class RunController {
   }
 
   private postSnapshot(forceLog = false): void {
-    this.deps.post({ type: 'snapshot', runs: [...this.chats.values()].map((c) => toRunView(c.store, c.busy && !c.turnOver, { lingering: c.busy && c.turnOver })) });
+    this.deps.post({ type: 'snapshot', runs: [...this.chats.values()].map((c) => toRunView(c.store, c.busy && !c.turnOver, { lingering: c.busy && c.turnOver, stalled: !!c.stalled })) });
     // O cartão de cada chat mostra a conversa ao vivo: reenvia só os chats que mudaram (ou todos, se pedido).
     for (const [id, chat] of this.chats) if (forceLog || this.dirty.has(id)) this.postChatLog(chat, forceLog);
     // O log do node inspecionado só é reenviado se o chat dele mudou (ou se foi pedido).
@@ -303,6 +322,7 @@ export class RunController {
       return;
     }
     chat.pending.delete(requestId);
+    this.armStall(chat);
     let answer: PermissionDecision;
     if (decision === 'deny') {
       answer = { behavior: 'deny', message: 'Negado pelo usuário no Visor.' };
@@ -323,6 +343,32 @@ export class RunController {
       chat.store.apply({ type: 'permission_resolved', runId: chat.store.run.id, requestId, ts: Date.now() });
     }
     chat.pending.clear();
+  }
+
+  /** Rearma o watchdog a cada sinal do processo; só conta com o turno encerrado e o processo vivo. */
+  private armStall(chat: Chat): void {
+    clearTimeout(chat.stallTimer);
+    chat.stallTimer = undefined;
+    const minutes = this.deps.settings().lingerTimeoutMinutes;
+    if (!chat.turnOver || !chat.active || minutes <= 0) return;
+    chat.stallTimer = setTimeout(() => {
+      chat.stallTimer = undefined;
+      // Com permissão pendente o processo espera a pessoa, não está travado.
+      if (!chat.turnOver || !chat.active || chat.pending.size > 0) return;
+      chat.stalled = true;
+      this.log.info('stall', { runId: chat.store.run.id.slice(0, 8), pid: chat.active.pid, minutes });
+      this.dirty.add(chat.store.run.id);
+      this.flush();
+    }, minutes * 60_000);
+  }
+
+  private clearStall(chat: Chat): void {
+    clearTimeout(chat.stallTimer);
+    chat.stallTimer = undefined;
+    if (chat.stalled) {
+      chat.stalled = false;
+      this.dirty.add(chat.store.run.id);
+    }
   }
 
   private markDone(runId: string): void {
@@ -699,6 +745,8 @@ export class RunController {
       this.applyEcho(store, t);
       store.apply({ type: 'run_resumed', runId: store.run.id, ts: Date.now() });
       chat.turnOver = false;
+      this.clearStall(chat);
+      this.armStall(chat);
       this.dirty.add(store.run.id);
       if (t.ack) this.deps.post({ type: 'answer_ack', nodeId: t.ack, ok: true });
       this.flush();
@@ -828,6 +876,8 @@ export class RunController {
           if (chat.active === run) {
             if (e.type === 'run_finished') chat.turnOver = true;
             if (e.type === 'run_resumed') chat.turnOver = false;
+            this.clearStall(chat);
+            this.armStall(chat);
           }
           store.apply(e);
           this.dirty.add(store.run.id);
@@ -841,6 +891,7 @@ export class RunController {
       const result = await run.done;
       chat.active = undefined;
       chat.turnOver = false;
+      this.clearStall(chat);
       this.dropPendingPermissions(chat);
       this.flush();
 
@@ -857,6 +908,7 @@ export class RunController {
       ack(false);
       chat.active = undefined;
       chat.turnOver = false;
+      this.clearStall(chat);
       this.dropPendingPermissions(chat);
       this.closeStore(chat);
       this.notice('error', `Falha inesperada: ${err instanceof Error ? err.message : String(err)}`, chat);
