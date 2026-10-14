@@ -2,12 +2,14 @@ import type { EventView, RunView } from '../protocol';
 import type { AgentEvent } from './schema';
 import type { RunStore } from './store';
 
-export function toRunView(store: RunStore, busy = false): RunView {
+export function toRunView(store: RunStore, busy = false, extra: { lingering?: boolean; stalled?: boolean } = {}): RunView {
   return {
     id: store.run.id,
     title: store.run.title,
     ...(store.run.options ? { options: store.run.options } : {}),
     busy,
+    ...(extra.lingering ? { lingering: true } : {}),
+    ...(extra.stalled ? { stalled: true } : {}),
     status: store.run.status,
     startedAt: store.run.startedAt,
     endedAt: store.run.endedAt,

@@ -57,6 +57,14 @@ interface Chat {
   cancelRequested: boolean;
   /** pedidos de permissão do Claude aguardando a pessoa (com a entrada e as sugestões completas, só no host) */
   pending: Map<string, Extract<NormalizedEvent, { type: 'permission_request' }>>;
+  /** o processo ativo já emitiu o fim do turno, mas segue vivo (tarefas em segundo plano) */
+  turnOver: boolean;
+  /** opções com que o processo ativo foi iniciado (a resposta pelo stdin só vale se não mudaram) */
+  activeOptions?: string;
+  /** termina quando o turno em andamento termina (para esperar o processo sair antes de retomar) */
+  turn?: Promise<void>;
+  /** o processo ativo está sendo trocado por outro: o cancelamento não é da pessoa, então sem aviso */
+  replacing?: boolean;
 }
 
 interface Turn {
@@ -65,6 +73,8 @@ interface Turn {
   echo?: { nodeId: string; text: string; attachments?: string[] };
   /** anexos desta mensagem (já conferidos): definem as pastas extras liberadas ao agente */
   attachments?: AttachedFile[];
+  /** node que enviou a mensagem: recebe um answer_ack */
+  ack?: string;
 }
 
 const CAPS_TTL_MS = 60_000;
@@ -228,7 +238,7 @@ export class RunController {
   }
 
   private postSnapshot(forceLog = false): void {
-    this.deps.post({ type: 'snapshot', runs: [...this.chats.values()].map((c) => toRunView(c.store, c.busy)) });
+    this.deps.post({ type: 'snapshot', runs: [...this.chats.values()].map((c) => toRunView(c.store, c.busy && !c.turnOver, { lingering: c.busy && c.turnOver })) });
     // O cartão de cada chat mostra a conversa ao vivo: reenvia só os chats que mudaram (ou todos, se pedido).
     for (const [id, chat] of this.chats) if (forceLog || this.dirty.has(id)) this.postChatLog(chat, forceLog);
     // O log do node inspecionado só é reenviado se o chat dele mudou (ou se foi pedido).
@@ -317,7 +327,7 @@ export class RunController {
 
   private markDone(runId: string): void {
     const chat = this.chats.get(runId);
-    if (!chat || chat.busy || chat.store.run.status !== 'waiting') return;
+    if (!chat || (chat.busy && !chat.turnOver) || chat.store.run.status !== 'waiting') return;
     chat.store.apply({ type: 'run_finished', runId, status: 'done', ts: Date.now() });
     this.dirty.add(runId);
     this.flush();
@@ -539,21 +549,25 @@ export class RunController {
     const node = chat?.store.nodes.get(nodeId);
     if (!chat || !node) {
       this.notice('error', 'Não encontrei esse node para enviar a mensagem.');
+      this.deps.post({ type: 'answer_ack', nodeId, ok: false });
       return;
     }
     const files = await this.resolveAttachments(attachmentPaths, chat);
-    if (!files) return;
+    if (!files) {
+      this.deps.post({ type: 'answer_ack', nodeId, ok: false });
+      return;
+    }
     const names = files.map((f) => f.name);
     const echo = { nodeId, text, ...(names.length ? { attachments: names } : {}) };
     const message = withAttachments(text, files);
-    if (node.parentId === null) return this.runTurn(chat, { prompt: message, fresh: false, echo, attachments: files });
+    if (node.parentId === null) return this.runTurn(chat, { prompt: message, fresh: false, echo, attachments: files, ack: nodeId });
     // Com o agentId dá para pedir a continuação exata; sem ele só dá para pedir ao orquestrador que tente.
     const prompt = node.agentId
       ? `Send a follow-up to the existing "${node.agentType}" subagent (agentId ${node.agentId}) using the SendMessage tool, ` +
         `with exactly this message. Do not start a new subagent. Then report what it replied.\n\nMessage:\n${message}`
       : `Continue the work of the "${node.agentType}" subagent you started earlier, passing it exactly this message ` +
         `(if you cannot continue it, start a new "${node.agentType}" subagent). Then report what it replied.\n\nMessage:\n${message}`;
-    return this.runTurn(chat, { prompt, fresh: false, echo, attachments: files });
+    return this.runTurn(chat, { prompt, fresh: false, echo, attachments: files, ack: nodeId });
   }
 
   private spawnAgent(agentType: string, task: string, runId: string | null): Promise<void> {
@@ -622,7 +636,7 @@ export class RunController {
       store.apply({ type: 'run_started', runId, ts: Date.now() }); // aparece no canvas na hora; o init do CLI traz a sessão
       store.apply({ type: 'node_event', runId, nodeId: store.rootId, kind: 'message', payload: { role: 'user', text: shown ?? prompt, ...(files.length ? { attachments: files.map((f) => f.name) } : {}) }, ts: Date.now() });
       this.dirty.add(runId);
-      chat = { store, busy: true, cancelRequested: false, pending: new Map() };
+      chat = { store, busy: true, cancelRequested: false, pending: new Map(), turnOver: false };
       this.chats.set(runId, chat);
       this.warnIfManyInParallel(settings);
       this.postSnapshot();
@@ -664,18 +678,64 @@ export class RunController {
     this.flush();
   }
 
+  private applyEcho(store: RunStore, t: Turn): void {
+    if (!t.echo) return;
+    store.apply({
+      type: 'node_event', runId: store.run.id, nodeId: t.echo.nodeId, kind: 'message',
+      payload: { role: 'user', text: t.echo.text, ...(t.echo.attachments?.length ? { attachments: t.echo.attachments } : {}) }, ts: Date.now(),
+    });
+  }
+
+  /**
+   * O turno acabou, mas o processo segue vivo (tarefas em segundo plano): a resposta vai pelo stdin dele, sem matar as tarefas.
+   * Se o stdin já fechou, ou se a resposta precisa de opções/anexos que o processo não tem, encerra-o e retoma num processo novo.
+   */
+  private async answerLive(chat: Chat, t: Turn): Promise<void> {
+    const store = chat.store;
+    const active = chat.active!;
+    const sameOptions = chat.activeOptions === JSON.stringify(store.run.options ?? {});
+    const newRules = outsideFiles(t.attachments ?? [], store.run.cwd).length > 0;
+    if (sameOptions && !newRules && active.sendUserMessage(t.prompt)) {
+      this.applyEcho(store, t);
+      store.apply({ type: 'run_resumed', runId: store.run.id, ts: Date.now() });
+      chat.turnOver = false;
+      this.dirty.add(store.run.id);
+      if (t.ack) this.deps.post({ type: 'answer_ack', nodeId: t.ack, ok: true });
+      this.flush();
+      return;
+    }
+    if (active.hasBackgroundTasks()) {
+      this.notice('info', 'Havia tarefas em segundo plano neste chat: elas foram interrompidas para enviar a resposta num processo novo.', chat);
+    }
+    chat.replacing = true;
+    active.cancel();
+    await chat.turn;
+    chat.replacing = false;
+    return this.runTurn(chat, t);
+  }
+
   /** Um turno do chat: o primeiro (fresh) ou uma continuação da mesma sessão (--resume). */
   private async runTurn(chat: Chat, t: Turn): Promise<void> {
     const store = chat.store;
+    let acked = false;
+    const ack = (ok: boolean) => {
+      if (acked || !t.ack) return;
+      acked = true;
+      this.deps.post({ type: 'answer_ack', nodeId: t.ack, ok });
+    };
     if (!t.fresh) {
       if (chat.busy) {
+        if (chat.turnOver && chat.active) return this.answerLive(chat, t);
         this.notice('warn', 'Esta conversa ainda está executando. Cancele-a ou espere terminar.', chat);
+        ack(false);
         return;
       }
       chat.busy = true;
       chat.cancelRequested = false;
       this.postSnapshot(); // a Webview passa a saber que este chat está ocupado
     }
+    let release!: () => void;
+    chat.turn = new Promise<void>((r) => (release = r));
     try {
       const settings = this.deps.settings();
       const options = store.run.options;
@@ -688,6 +748,7 @@ export class RunController {
         sessionId = store.run.sessionId;
         if (!sessionId) {
           this.notice('error', 'Não há uma sessão para continuar nesta conversa. Inicie uma execução primeiro.', chat);
+          ack(false);
           return;
         }
         // Em turnos retomados reaproveita o diagnóstico do CLI, para não pagar duas chamadas a cada mensagem.
@@ -696,10 +757,14 @@ export class RunController {
           const check = await this.deps.detect(cli === 'codex' ? settings.codexPath : settings.claudePath, cli);
           this.lastChecks.set(cli, check);
           this.deps.post({ type: 'cli', check, cli });
-          if (this.blockedByCli(check, cli, chat)) return;
+          if (this.blockedByCli(check, cli, chat)) {
+            ack(false);
+            return;
+          }
         }
         if (chat.cancelRequested) {
           this.notice('info', 'Execução cancelada.', chat);
+          ack(false);
           return;
         }
         const nodes = cli === 'codex' ? [] : [...store.nodes.values()].filter((n) => n.invocationId);
@@ -707,12 +772,7 @@ export class RunController {
           subagents: nodes.map((n) => n.invocationId!),
           tasks: Object.fromEntries(nodes.filter((n) => n.agentId).map((n) => [n.agentId!, n.invocationId!])),
         };
-        if (t.echo) {
-          store.apply({
-            type: 'node_event', runId: store.run.id, nodeId: t.echo.nodeId, kind: 'message',
-            payload: { role: 'user', text: t.echo.text, ...(t.echo.attachments?.length ? { attachments: t.echo.attachments } : {}) }, ts: Date.now(),
-          });
-        }
+        this.applyEcho(store, t);
         if (cli === 'claude') this.noticeOutside(t.attachments ?? [], store.run.cwd, chat);
         // O loading aparece na hora, antes de o processo emitir o primeiro evento.
         store.apply({ type: 'run_resumed', runId: store.run.id, ts: Date.now() });
@@ -748,7 +808,9 @@ export class RunController {
           appendSystemPrompt: QUESTION_INSTRUCTION,
         });
       }
-      const run = this.deps.startRun(
+      chat.turnOver = false;
+      chat.activeOptions = JSON.stringify(options ?? {});
+      const run: ProcessRun = this.deps.startRun(
         store.run.id,
         {
           command, args, cwd: store.run.cwd,
@@ -762,21 +824,28 @@ export class RunController {
             return;
           }
           if (e.type === 'permission_request') chat.pending.set(e.requestId, e);
+          // Só o processo atual decide se o turno acabou (um processo antigo, sendo trocado, não conta).
+          if (chat.active === run) {
+            if (e.type === 'run_finished') chat.turnOver = true;
+            if (e.type === 'run_resumed') chat.turnOver = false;
+          }
           store.apply(e);
           this.dirty.add(store.run.id);
           this.schedule();
         },
       );
       chat.active = run;
+      ack(true);
       this.postSnapshot();
 
       const result = await run.done;
       chat.active = undefined;
+      chat.turnOver = false;
       this.dropPendingPermissions(chat);
       this.flush();
 
       if (result.cancelled) {
-        this.notice('info', 'Execução cancelada.', chat);
+        if (!chat.replacing) this.notice('info', 'Execução cancelada.', chat);
       } else if (result.spawnError) {
         this.notice('error', `Não consegui executar o CLI: ${result.spawnError}`, chat);
       } else if (store.run.status === 'error') {
@@ -785,7 +854,9 @@ export class RunController {
         this.notice('error', `A execução terminou com erro (código ${result.exitCode}).${reason ? ` ${reason}` : ''}`, chat);
       }
     } catch (err) {
+      ack(false);
       chat.active = undefined;
+      chat.turnOver = false;
       this.dropPendingPermissions(chat);
       this.closeStore(chat);
       this.notice('error', `Falha inesperada: ${err instanceof Error ? err.message : String(err)}`, chat);
@@ -794,6 +865,7 @@ export class RunController {
       chat.cancelRequested = false;
       this.dirty.add(store.run.id);
       if (this.chats.get(store.run.id) === chat) this.flush();
+      release();
     }
   }
 }

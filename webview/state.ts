@@ -110,6 +110,8 @@ export function reduce(state: ViewState, action: Action): ViewState {
       const notice: Notice = { id: state.nextNoticeId, level: action.level, text: action.text };
       return { ...state, notices: [...state.notices, notice].slice(-MAX_NOTICES), nextNoticeId: state.nextNoticeId + 1 };
     }
+    case 'answer_ack':
+      return state;
     case 'dismiss':
       return { ...state, notices: state.notices.filter((n) => n.id !== action.id) };
   }

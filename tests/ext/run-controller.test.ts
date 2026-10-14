@@ -18,6 +18,8 @@ interface FakeRun {
   finish(r?: ProcessRunResult): void;
   cancel: ReturnType<typeof vi.fn>;
   respond: ReturnType<typeof vi.fn>;
+  sendUserMessage: ReturnType<typeof vi.fn>;
+  hasBackgroundTasks: ReturnType<typeof vi.fn>;
 }
 
 function setup(over: Partial<ControllerDeps> = {}, settings: Partial<VisorSettings> = {}) {
@@ -28,10 +30,13 @@ function setup(over: Partial<ControllerDeps> = {}, settings: Partial<VisorSettin
   const startRun = vi.fn((runId: string, opts: ProcessRunOptions, on: (e: NormalizedEvent) => void) => {
     const cancel = vi.fn();
     const respond = vi.fn(() => true);
+    const sendUserMessage = vi.fn(() => true);
+    const hasBackgroundTasks = vi.fn(() => false);
+    const pid = 1000 + runs.length;
     let finish: (r: ProcessRunResult) => void = () => {};
     const done = new Promise<ProcessRunResult>((res) => (finish = res));
-    runs.push({ runId, opts, emit: on, finish: (r) => finish(r ?? result()), cancel, respond });
-    return { cancel, respond, done };
+    runs.push({ runId, opts, emit: on, finish: (r) => finish(r ?? result()), cancel, respond, sendUserMessage, hasBackgroundTasks });
+    return { pid, cancel, respond, sendUserMessage, hasBackgroundTasks, done };
   });
   const deps: ControllerDeps = {
     post: (m) => posted.push(m),
@@ -90,6 +95,17 @@ async function waitingChat(t: T, extra: (id: string) => NormalizedEvent[] = () =
   await p;
   return run.runId;
 }
+/** chat que terminou o turno com uma pergunta, mas cujo processo segue vivo (tarefa em segundo plano) */
+async function lingeringChat(t: T) {
+  const done = (await startChat(t)).done;
+  const run = t.runs.at(-1)!;
+  run.hasBackgroundTasks.mockReturnValue(true);
+  run.emit(init(run.runId));
+  run.emit(finishedWithQuestion(run.runId, Q));
+  await t.tick();
+  return { run, done, runId: run.runId };
+}
+const acks = (t: T) => t.posted.filter((m) => m.type === 'answer_ack') as Extract<HostMessage, { type: 'answer_ack' }>[];
 
 describe('RunController: iniciar chats', () => {
   it('sem pasta aberta avisa e não spawna', async () => {
@@ -572,7 +588,7 @@ describe('RunController: responder, enviar, novo agente, concluir', () => {
     expect(t.startRun).not.toHaveBeenCalled();
   });
 
-  it('markDone fecha o chat em waiting como concluído; ignora chat desconhecido, fora de waiting e com processo vivo', async () => {
+  it('markDone fecha o chat em waiting como concluído; ignora chat desconhecido e fora de waiting; funciona com o processo vivo (turno encerrado)', async () => {
     const t = setup();
     await t.c.handle({ type: 'markDone', runId: 'zzz' });
     const id = await waitingChat(t);
@@ -583,7 +599,7 @@ describe('RunController: responder, enviar, novo agente, concluir', () => {
     await t.c.handle({ type: 'markDone', runId: id });
     expect(t.snaps().length).toBe(before);
 
-    // pergunta recebida, mas o processo ainda vive (tarefa em segundo plano)
+    // pergunta recebida e o processo ainda vive (tarefa em segundo plano): o turno já acabou (turnOver), então markDone funciona
     const p = (await startChat(t, 'y')).done;
     const run = t.runs.at(-1)!;
     run.emit(init(run.runId));
@@ -591,7 +607,7 @@ describe('RunController: responder, enviar, novo agente, concluir', () => {
     await t.tick();
     expect(t.view(run.runId).status).toBe('waiting');
     await t.c.handle({ type: 'markDone', runId: run.runId });
-    expect(t.view(run.runId).status).toBe('waiting');
+    expect(t.view(run.runId).status).toBe('done');
     run.finish();
     await p;
   });
@@ -1480,5 +1496,87 @@ describe('permissões interativas', () => {
     t.runs[0]!.emit({ type: 'run_finished', runId: 'r1', status: 'cancelled', ts: 9 });
     t.runs[0]!.finish(); await done;
     expect(t.view('r1').nodes[0]!.permissions).toBeUndefined();
+  });
+});
+
+describe('RunController: processo vivo depois do fim do turno', () => {
+  it('a pergunta fica respondível: busy false e lingering true', async () => {
+    const t = setup();
+    const { runId } = await lingeringChat(t);
+    const v = t.view(runId);
+    expect(v.status).toBe('waiting');
+    expect(v.busy).toBe(false);
+    expect(v.lingering).toBe(true);
+  });
+
+  it('responder escreve no stdin do processo vivo, sem processo novo', async () => {
+    const t = setup();
+    const { run, runId } = await lingeringChat(t);
+    await t.c.handle({ type: 'send', nodeId: `${runId}:root`, text: 'Azul' });
+    await t.tick();
+    expect(run.sendUserMessage).toHaveBeenCalledWith('Azul');
+    expect(t.startRun).toHaveBeenCalledTimes(1);
+    expect(t.view(runId).status).toBe('running');
+    expect(t.view(runId).lingering).toBeUndefined();
+    expect(acks(t).at(-1)).toEqual({ type: 'answer_ack', nodeId: `${runId}:root`, ok: true });
+  });
+
+  it('stdin já fechado (processo saindo): espera o processo sair e retoma com --resume', async () => {
+    const t = setup();
+    const { run, runId } = await lingeringChat(t);
+    run.sendUserMessage.mockReturnValue(false);
+    run.hasBackgroundTasks.mockReturnValue(false);
+    const p = t.c.handle({ type: 'send', nodeId: `${runId}:root`, text: 'Azul' });
+    await t.tick();
+    expect(t.startRun).toHaveBeenCalledTimes(1);
+    run.finish(result({ cancelled: true }));
+    await t.tick();
+    expect(t.startRun).toHaveBeenCalledTimes(2);
+    expect(t.runs[1]!.opts.args).toContain('--resume');
+    expect(promptOf(t.runs[1]!.opts)).toBe('Azul');
+    expect(t.notices().some((n) => n.text.includes('Execução cancelada'))).toBe(false);
+    t.runs[1]!.finish();
+    await p;
+  });
+
+  it('opções trocadas com tarefa em segundo plano: interrompe, avisa e retoma num processo novo', async () => {
+    const t = setup();
+    const { run, runId } = await lingeringChat(t);
+    await t.c.handle({ type: 'setOptions', runId, options: { model: 'opus' } });
+    const p = t.c.handle({ type: 'send', nodeId: `${runId}:root`, text: 'Azul' });
+    await t.tick();
+    expect(run.sendUserMessage).not.toHaveBeenCalled();
+    expect(run.cancel).toHaveBeenCalled();
+    expect(t.notices().some((n) => /segundo plano/.test(n.text))).toBe(true);
+    run.finish(result({ cancelled: true }));
+    await t.tick();
+    expect(t.startRun).toHaveBeenCalledTimes(2);
+    expect(t.runs[1]!.opts.args).toEqual(expect.arrayContaining(['--model', 'opus']));
+    expect(t.notices().some((n) => n.text.includes('Execução cancelada'))).toBe(false);
+    t.runs[1]!.finish();
+    await p;
+  });
+
+  it('send para node inexistente devolve answer_ack ok false', async () => {
+    const t = setup();
+    await t.c.handle({ type: 'send', nodeId: 'nada:root', text: 'oi' });
+    expect(acks(t)).toEqual([{ type: 'answer_ack', nodeId: 'nada:root', ok: false }]);
+  });
+
+  it('turno retomado normal confirma com answer_ack ok true quando o processo inicia', async () => {
+    const t = setup();
+    const runId = await waitingChat(t);
+    const p = t.c.handle({ type: 'send', nodeId: `${runId}:root`, text: 'Azul' });
+    await t.tick();
+    expect(acks(t).at(-1)).toEqual({ type: 'answer_ack', nodeId: `${runId}:root`, ok: true });
+    t.runs[1]!.finish();
+    await p;
+  });
+
+  it('"Marcar como concluído" funciona com o processo vivo', async () => {
+    const t = setup();
+    const { runId } = await lingeringChat(t);
+    await t.c.handle({ type: 'markDone', runId });
+    expect(t.view(runId).status).toBe('done');
   });
 });

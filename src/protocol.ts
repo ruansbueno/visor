@@ -66,6 +66,10 @@ export interface RunView {
   options?: ChatOptions;
   /** O host está processando um turno deste chat (inclui a fase antes de o processo existir). */
   busy: boolean;
+  /** O agente terminou o turno, mas o processo segue vivo (tarefas em segundo plano): dá para responder (vai pelo stdin). */
+  lingering?: boolean;
+  /** Watchdog: com o turno encerrado, o processo vivo ficou sem dar sinal por `visor.lingerTimeoutMinutes`. */
+  stalled?: boolean;
   status: NodeStatus;
   startedAt: number;
   endedAt?: number;
@@ -94,6 +98,8 @@ export type HostMessage =
   | { type: 'node_log'; nodeId: string; events: EventView[]; total: number }
   | { type: 'chat_log'; runId: string; events: EventView[]; total: number }
   | { type: 'layout'; boxes: Record<string, NodeBox> }
+  /** resultado de um `send`: ok = a mensagem foi entregue a um processo (novo ou vivo) */
+  | { type: 'answer_ack'; nodeId: string; ok: boolean }
   | { type: 'notice'; level: 'info' | 'warn' | 'error'; text: string };
 
 export type WebviewMessage =
