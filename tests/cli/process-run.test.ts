@@ -137,6 +137,64 @@ describe('startProcessRun', () => {
       const r = await run.done;
       expect(r.cancelled).toBe(true);
     });
+
+    const bgLine = (n: number) => L({ type: 'system', subtype: 'background_tasks_changed', tasks: Array.from({ length: n }, (_, k) => ({ task_id: `t${k}` })) });
+    const initLine = L({ type: 'system', subtype: 'init', session_id: 's1' });
+    const resultLine = L({ type: 'result', is_error: false, session_id: 's1' });
+
+    it('sendUserMessage depois do result, com tarefa em segundo plano, escreve um novo turno no stdin', async () => {
+      const dir = tmp();
+      const f = path.join(dir, 's.ndjson');
+      const stdinFile = path.join(dir, 'stdin.log');
+      writeFileSync(f, [initLine, bgLine(1), resultLine].join('\n') + '\n');
+      let finished!: () => void;
+      const turnOver = new Promise<void>((r) => (finished = r));
+      const run = startProcessRun('r1', {
+        command: process.execPath, args: [fake, f, '--until-stdin-end', '--stdin-file', stdinFile], cwd: process.cwd(), input: 'primeira\n',
+      }, (e) => { if (e.type === 'run_finished') finished(); });
+      await turnOver;
+      expect(run.hasBackgroundTasks()).toBe(true);
+      expect(run.sendUserMessage('segunda')).toBe(true);
+      await new Promise((r) => setTimeout(r, 200));
+      run.cancel();
+      await run.done;
+      const lines = readFileSync(stdinFile, 'utf8').trim().split('\n');
+      expect(JSON.parse(lines.at(-1)!)).toEqual({ type: 'user', message: { role: 'user', content: 'segunda' } });
+    });
+
+    it('sendUserMessage com o processo já encerrado devolve false', async () => {
+      const f = path.join(tmp(), 's.ndjson');
+      writeFileSync(f, happy);
+      const run = startProcessRun('r1', { command: process.execPath, args: [fake, f, '--until-stdin-end'], cwd: process.cwd(), input: 'x\n' }, () => {});
+      await run.done;
+      expect(run.sendUserMessage('tarde')).toBe(false);
+    });
+
+    it('tarefas zeradas sem turno novo: o stdin fecha depois de lingerCloseMs e o processo sai sozinho', async () => {
+      const f = path.join(tmp(), 's.ndjson');
+      writeFileSync(f, [initLine, bgLine(1), resultLine, bgLine(0)].join('\n') + '\n');
+      const run = startProcessRun('r1', {
+        command: process.execPath, args: [fake, f, '--until-stdin-end'], cwd: process.cwd(), input: 'x\n', lingerCloseMs: 100,
+      }, () => {});
+      const r = await run.done;
+      expect(r.cancelled).toBe(false);
+      expect(r.exitCode).toBe(0);
+    });
+
+    it.skipIf(process.platform === 'win32')('cancel({ immediate: true }) mata na hora, mesmo se o CLI ignora SIGTERM', async () => {
+      const f = path.join(tmp(), 's.ndjson');
+      writeFileSync(f, happy.split('\n').slice(0, 2).join('\n') + '\n');
+      const run = startProcessRun('r1', {
+        command: process.execPath, args: [fake, f, '--hang', '--ignore-sigterm'], cwd: process.cwd(), cancelGraceMs: 10_000,
+      }, () => {});
+      expect(typeof run.pid).toBe('number');
+      await new Promise((r) => setTimeout(r, 150));
+      const t0 = Date.now();
+      run.cancel({ immediate: true });
+      const r = await run.done;
+      expect(r.cancelled).toBe(true);
+      expect(Date.now() - t0).toBeLessThan(2000);
+    });
   });
 
   it('o Claude roda como a extensão do VS Code (não como sdk-cli) e sem marcas de sessão filha; o Codex não é alterado', async () => {
