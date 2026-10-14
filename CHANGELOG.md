@@ -1,5 +1,13 @@
 # Changelog
 
+## Não lançado
+
+- Sessões longas com várias conversas em paralelo: a pergunta do agente sempre aceita resposta, mesmo com tarefa em segundo plano ainda rodando (a resposta vai para o mesmo processo, sem interromper a tarefa).
+- Se um processo fica parado depois de responder, o cartão avisa e oferece "Encerrar processo" ou "Continuar esperando" (`visor.lingerTimeoutMinutes`).
+- "Not logged in" no meio da sessão agora mostra o aviso de login com "Verificar de novo"; se o terminal continuar logado, o próximo envio já funciona.
+- Processos que sobravam depois de fechar o VS Code (e só sumiam reiniciando a máquina) são encerrados ao fechar e, se algum escapar, na próxima abertura.
+- Canal de saída "Visor" registra início e fim de cada processo; `visor.debugLog` liga os detalhes.
+
 ## 0.1.6
 
 - O menu `/` (skills e comandos) abre em qualquer ponto da mensagem, não só no início.
