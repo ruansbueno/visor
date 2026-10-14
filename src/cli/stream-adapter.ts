@@ -5,6 +5,9 @@ import { type FinalStatus, type NormalizedEvent, rootNodeId, subagentNodeId } fr
 // Nomes de tool que abrem um subagente (a versão 2.1.267 do claude usa "Agent").
 const SUBAGENT_TOOLS = new Set(['Task', 'Agent']);
 
+/** Texto do `result` de erro quando o CLI está sem login ou com o token recusado (visto no 2.1.287). */
+const AUTH_LOST_TEXT = /not logged in|please run \/login|failed to authenticate|oauth (access )?token (is invalid|has expired)|invalid api key/i;
+
 type Json = Record<string, any>;
 
 /** Estado de turnos anteriores da mesma sessão, para o adapter reconhecer subagentes já existentes. */
@@ -34,6 +37,7 @@ export class StreamAdapter implements RunAdapter {
   private readonly root: string;
   private readonly resuming: boolean;
   private backgroundTasks = 0;
+  private authLostSent = false;
 
   constructor(private readonly runId: string, opts: StreamAdapterOptions = {}) {
     this.root = rootNodeId(runId);
@@ -103,9 +107,11 @@ export class StreamAdapter implements RunAdapter {
       }
     } else if (m.type === 'assistant' || m.type === 'user') {
       out.push(...this.start(m.session_id, ts));
+      if (m.type === 'assistant' && m.error === 'authentication_failed') out.push(...this.authLost(ts));
       out.push(...this.content(m, ts));
     } else if (m.type === 'result') {
       out.push(...this.start(m.session_id, ts));
+      if (m.is_error && typeof m.result === 'string' && AUTH_LOST_TEXT.test(m.result)) out.push(...this.authLost(ts));
       if (!this.finished) {
         this.finished = true;
         const question = m.is_error ? null : detectQuestion(typeof m.result === 'string' ? m.result : '');
@@ -121,6 +127,13 @@ export class StreamAdapter implements RunAdapter {
   /** O CLI informou tarefas em segundo plano ainda pendentes (o processo precisa continuar vivo para elas). */
   hasBackgroundTasks(): boolean {
     return this.backgroundTasks > 0;
+  }
+
+  /** Uma vez por processo: o host reverifica o login e mostra o aviso. */
+  private authLost(ts: number): NormalizedEvent[] {
+    if (this.authLostSent) return [];
+    this.authLostSent = true;
+    return [{ type: 'auth_lost', runId: this.runId, ts }];
   }
 
   end(cancelled: boolean): NormalizedEvent[] {

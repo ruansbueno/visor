@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { StreamAdapter } from '../../src/cli/stream-adapter';
 import { RunStore, formatTree } from '../../src/core/store';
 
@@ -204,5 +205,46 @@ describe('StreamAdapter', () => {
     for (const l of [L({ type: 'system', subtype: 'init', session_id: 'nova' })]) for (const e of a.push(l)) s.apply(e);
     expect(s.run.sessionId).toBe('nova');
     expect(s.run.status).toBe('running');
+  });
+
+  describe('auth_lost', () => {
+    const authAssistant = L({ type: 'assistant', parent_tool_use_id: null, error: 'authentication_failed', message: { content: [{ type: 'text', text: 'Not logged in · Please run /login' }] } });
+    const authResult = (text = 'Not logged in · Please run /login') => L({ type: 'result', subtype: 'success', is_error: true, result: text, session_id: 's1' });
+    const types = (lines: string[]) => {
+      const a = new StreamAdapter('r1');
+      return lines.flatMap((l) => a.push(l)).map((e) => e.type);
+    };
+
+    it('assistant com error "authentication_failed" emite auth_lost uma vez só', () => {
+      const t = types([init, authAssistant, authResult()]);
+      expect(t.filter((x) => x === 'auth_lost')).toHaveLength(1);
+      expect(t.at(-1)).toBe('run_finished');
+    });
+
+    it('result com erro de 401 também conta', () => {
+      expect(types([init, authResult('Failed to authenticate. API Error: 401 OAuth access token is invalid.')])).toContain('auth_lost');
+    });
+
+    it('result sem erro que cita /login não é auth_lost', () => {
+      expect(types([init, L({ type: 'result', subtype: 'success', is_error: false, result: 'Please run /login to continue', session_id: 's1' })])).not.toContain('auth_lost');
+    });
+
+    it('erro que não é de autenticação não é auth_lost', () => {
+      expect(types([init, authResult('Prompt is too long')])).not.toContain('auth_lost');
+    });
+
+    it('fixture real (sanitizada): auth_lost e run em error', () => {
+      const a = new StreamAdapter('r1');
+      const s = new RunStore({ runId: 'r1', source: 'panel', cwd: '/p' });
+      const seen: string[] = [];
+      for (const line of readFileSync('fixtures/turns/auth-lost.ndjson', 'utf8').split('\n')) {
+        for (const e of a.push(line)) {
+          seen.push(e.type);
+          s.apply(e);
+        }
+      }
+      expect(seen.filter((x) => x === 'auth_lost')).toHaveLength(1);
+      expect(s.run.status).toBe('error');
+    });
   });
 });

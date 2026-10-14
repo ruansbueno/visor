@@ -117,6 +117,7 @@ export class RunStore {
         return;
       }
       case 'usage':
+      case 'auth_lost':
         return;
       case 'node_meta': {
         const node = this.nodes.get(e.nodeId);

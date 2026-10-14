@@ -77,6 +77,8 @@ export type NormalizedEvent =
       input: Record<string, unknown>; description?: string; suggestions: unknown[]; ts: number;
     }
   | { type: 'permission_resolved'; runId: string; requestId: string; ts: number }
+  /** o CLI respondeu que está sem login (ou com o token recusado) neste processo; não pertence ao grafo do run */
+  | { type: 'auth_lost'; runId: string; ts: number }
   /** limites da assinatura informados pelo CLI (fração 0..1); não pertence ao grafo do run */
   | { type: 'usage'; runId: string; fiveHour?: number; sevenDay?: number; fiveHourResetsAt?: number; sevenDayResetsAt?: number; ts: number };
 

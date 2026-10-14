@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init","session_id":"00000000-0000-4000-8000-0000000000a1"}
+{"type":"assistant","parent_tool_use_id":null,"error":"authentication_failed","message":{"id":"00000000-0000-4000-8000-0000000000a2","model":"<synthetic>","role":"assistant","type":"message","content":[{"type":"text","text":"Not logged in · Please run /login"}]},"session_id":"00000000-0000-4000-8000-0000000000a1"}
+{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login","session_id":"00000000-0000-4000-8000-0000000000a1"}
