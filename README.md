@@ -65,6 +65,8 @@ Visor is an independent project and is **not affiliated with or endorsed by Anth
 | `visor.permissionMode` / `visor.allowedTools` | Default Claude Code permissions (headless mode, no interactive approval). |
 | `visor.codexSandbox` | Default Codex sandbox (`read-only`, `workspace-write`, `danger-full-access`). |
 | `visor.parallelWarningThreshold` | Number of simultaneous chats from which a warning is shown. |
+| `visor.lingerTimeoutMinutes` | Minutes a process can go quiet after the agent's turn ends (with a background task still pending) before Visor warns it may be stuck. `0` disables the warning. |
+| `visor.debugLog` | Writes detailed diagnostics (background tasks, snapshot size) to the "Visor" output channel. Process start/end are always logged; this only adds the extra detail. |
 
 ## Commands
 

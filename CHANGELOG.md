@@ -1,6 +1,6 @@
 # Changelog
 
-## Não lançado
+## 0.1.9
 
 - Sessões longas com várias conversas em paralelo: a pergunta do agente sempre aceita resposta, mesmo com tarefa em segundo plano ainda rodando (a resposta vai para o mesmo processo, sem interromper a tarefa).
 - Se um processo fica parado depois de responder, o cartão avisa e oferece "Encerrar processo" ou "Continuar esperando" (`visor.lingerTimeoutMinutes`).
