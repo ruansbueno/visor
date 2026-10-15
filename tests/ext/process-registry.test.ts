@@ -6,11 +6,12 @@ import { ProcessRegistry, signatureOf, type RegistryOs } from '../../src/ext/pro
 
 const SIG = '-p --output-format stream-json';
 
-function fakeOs(procs: Record<number, string>, alive: number[] = []) {
+function fakeOs(procs: Record<number, string>, alive: number[] = [], starts: Record<number, number> = {}) {
   const killed: [number, string][] = [];
   const later: (() => void)[] = [];
   const o: RegistryOs = {
     commandOf: (pid) => procs[pid],
+    startTimeOf: (pid) => starts[pid],
     isAlive: (pid) => alive.includes(pid) || pid in procs,
     killGroup: (pid, signal) => { killed.push([pid, signal]); },
     later: (fn) => { later.push(fn); },
@@ -46,15 +47,15 @@ describe('ProcessRegistry', () => {
     expect(JSON.parse(readFileSync(f, 'utf8')).map((e: { pid: number }) => e.pid).sort()).toEqual([500, 600]);
   });
 
-  it('reapOrphans mata só o que é de dono morto e com o comando conferindo (SIGTERM e depois SIGKILL)', () => {
+  it('reapOrphans mata só o que é de dono morto, com o comando conferindo e o horário de início batendo (SIGTERM e depois SIGKILL)', () => {
     const f = file();
     writeFileSync(f, JSON.stringify([
-      { pid: 500, owner: 10, startedAt: 1, signature: SIG },              // dono morto, comando confere → mata
-      { pid: 501, owner: 10, startedAt: 1, signature: SIG },              // pid reaproveitado por outro programa → não mata
-      { pid: 502, owner: 20, startedAt: 1, signature: SIG },              // dono vivo (outra janela) → não mata, fica
-      { pid: 503, owner: 10, startedAt: 1, signature: SIG },              // já morreu → some
+      { pid: 500, owner: 10, startedAt: 1000, signature: SIG },              // dono morto, comando e horário conferem → mata
+      { pid: 501, owner: 10, startedAt: 1000, signature: SIG },              // pid reaproveitado por outro programa → não mata
+      { pid: 502, owner: 20, startedAt: 1000, signature: SIG },              // dono vivo (outra janela) → não mata, fica
+      { pid: 503, owner: 10, startedAt: 1000, signature: SIG },              // já morreu → some
     ]));
-    const { o, killed, runLater } = fakeOs({ 500: `claude ${SIG} --verbose`, 501: '/usr/bin/vim', 502: `claude ${SIG}` }, [20]);
+    const { o, killed, runLater } = fakeOs({ 500: `claude ${SIG} --verbose`, 501: '/usr/bin/vim', 502: `claude ${SIG}` }, [20], { 500: 1000 });
     const r = new ProcessRegistry(f, o, 30);
     expect(r.reapOrphans()).toBe(1);
     expect(killed).toEqual([[500, 'SIGTERM']]);
@@ -63,10 +64,30 @@ describe('ProcessRegistry', () => {
     expect(JSON.parse(readFileSync(f, 'utf8')).map((e: { pid: number }) => e.pid)).toEqual([502]);
   });
 
+  it('comando confere mas o horário de início não bate (pid reaproveitado por um processo com o mesmo nome): não mata', () => {
+    const f = file();
+    writeFileSync(f, JSON.stringify([{ pid: 500, owner: 10, startedAt: 1000, signature: SIG }]));
+    const { o, killed } = fakeOs({ 500: `claude ${SIG} --verbose` }, [], { 500: 50_000 });
+    const r = new ProcessRegistry(f, o, 30);
+    expect(r.reapOrphans()).toBe(0);
+    expect(killed).toEqual([]);
+    expect(JSON.parse(readFileSync(f, 'utf8'))).toEqual([]);
+  });
+
+  it('sem como conferir o horário de início, descarta a entrada sem matar', () => {
+    const f = file();
+    writeFileSync(f, JSON.stringify([{ pid: 500, owner: 10, startedAt: 1000, signature: SIG }]));
+    const { o, killed } = fakeOs({ 500: `claude ${SIG} --verbose` });
+    const r = new ProcessRegistry(f, o, 30);
+    expect(r.reapOrphans()).toBe(0);
+    expect(killed).toEqual([]);
+    expect(JSON.parse(readFileSync(f, 'utf8'))).toEqual([]);
+  });
+
   it('sem como conferir o comando (Windows), descarta a entrada sem matar', () => {
     const f = file();
-    writeFileSync(f, JSON.stringify([{ pid: 500, owner: 10, startedAt: 1, signature: SIG }]));
-    const { o, killed } = fakeOs({});
+    writeFileSync(f, JSON.stringify([{ pid: 500, owner: 10, startedAt: 1000, signature: SIG }]));
+    const { o, killed } = fakeOs({}, [], { 500: 1000 });
     o.isAlive = (pid) => pid === 500;
     const r = new ProcessRegistry(f, o, 30);
     expect(r.reapOrphans()).toBe(0);

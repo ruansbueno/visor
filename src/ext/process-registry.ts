@@ -14,6 +14,8 @@ export interface ProcEntry {
 export interface RegistryOs {
   /** linha de comando atual do pid; undefined se não existe ou não dá para conferir */
   commandOf(pid: number): string | undefined;
+  /** horário em que o pid começou a rodar (epoch ms); undefined se não existe ou não dá para conferir */
+  startTimeOf(pid: number): number | undefined;
   isAlive(pid: number): boolean;
   /** encerra o grupo do processo (o CLI é líder de grupo: `detached`) */
   killGroup(pid: number, signal: NodeJS.Signals): void;
@@ -22,6 +24,9 @@ export interface RegistryOs {
 
 /** Os 3 primeiros argumentos: identificam o modo do CLI (`-p --output-format stream-json`, `exec --json ...`), nunca o prompt. */
 export const signatureOf = (args: string[]): string => args.slice(0, 3).join(' ');
+
+/** Tolerância entre o horário gravado e o que o SO informa agora (arredondamentos de segundo, relógio do SO). */
+const START_TIME_TOLERANCE_MS = 5_000;
 
 const isEntry = (e: unknown): e is ProcEntry => {
   const x = e as ProcEntry;
@@ -64,6 +69,10 @@ export class ProcessRegistry {
       }
       const cmd = this.os.commandOf(e.pid);
       if (!cmd || !cmd.includes(e.signature)) continue; // já morreu, pid reaproveitado ou sem como conferir
+      // Além do comando, confere o horário de início: um pid reaproveitado para outro processo do mesmo nome
+      // (ex.: outro `claude -p` iniciado por outra ferramenta ou janela, depois de a máquina reiniciar) não é confundido com o nosso.
+      const startedAt = this.os.startTimeOf(e.pid);
+      if (startedAt === undefined || Math.abs(startedAt - e.startedAt) > START_TIME_TOLERANCE_MS) continue;
       try {
         this.os.killGroup(e.pid, 'SIGTERM');
         this.os.later(() => {
@@ -115,6 +124,14 @@ export const nodeRegistryOs: RegistryOs = {
     const r = spawnSync('ps', ['-ww', '-o', 'command=', '-p', String(pid)], { encoding: 'utf8', timeout: 2000 });
     const out = r.status === 0 ? r.stdout.trim() : '';
     return out || undefined;
+  },
+  startTimeOf(pid) {
+    // Mesmo motivo do commandOf: sem isso no Windows, a entrada é descartada sem matar.
+    if (process.platform === 'win32') return undefined;
+    const r = spawnSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', timeout: 2000 });
+    if (r.status !== 0) return undefined;
+    const ms = Date.parse(r.stdout.trim());
+    return Number.isFinite(ms) ? ms : undefined;
   },
   isAlive(pid) {
     try {

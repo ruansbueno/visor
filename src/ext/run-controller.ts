@@ -937,6 +937,11 @@ export class RunController {
       chat.turnOver = false;
       this.clearStall(chat);
       this.dropPendingPermissions(chat);
+      // Nenhum run_finished chegou a ser aplicado (ex.: o processo morreu entre uma resposta pelo stdin e o
+      // próximo "system init"): sem isto o chat ficaria preso em "running" para sempre, sem jeito de recuperar.
+      if (store.run.status === 'running' || store.run.status === 'pending') {
+        store.apply({ type: 'run_finished', runId: store.run.id, status: result.cancelled ? 'cancelled' : 'error', ts: Date.now() });
+      }
       this.flush();
 
       if (result.cancelled) {

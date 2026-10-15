@@ -1524,6 +1524,21 @@ describe('RunController: processo vivo depois do fim do turno', () => {
     expect(acks(t).at(-1)).toEqual({ type: 'answer_ack', nodeId: `${runId}:root`, ok: true });
   });
 
+  it('processo morre depois da resposta pelo stdin, sem um run_finished novo: o chat não fica preso em "running"', async () => {
+    const t = setup();
+    const { run, runId } = await lingeringChat(t);
+    await t.c.handle({ type: 'send', nodeId: `${runId}:root`, text: 'Azul' });
+    await t.tick();
+    expect(t.view(runId).status).toBe('running'); // run_resumed já aplicado, sem outro run_finished ainda
+    // O processo morre sem nunca emitir outro system init/result (crash, OOM, kill externo).
+    run.finish(result({ cancelled: false }));
+    await t.tick();
+    const v = t.view(runId);
+    expect(v.status).not.toBe('running');
+    expect(v.busy).toBe(false);
+    expect(v.lingering).toBeUndefined();
+  });
+
   it('stdin já fechado (processo saindo): espera o processo sair e retoma com --resume', async () => {
     const t = setup();
     const { run, runId } = await lingeringChat(t);
